@@ -12,10 +12,14 @@ struct Immediates {
 var<immediate> imm: Immediates;
 
 @compute
-@workgroup_size(1)
+@workgroup_size(8, 8)
 fn main(
     @builtin(global_invocation_id) id: vec3<u32>
 ) {
+    if any(id.xy >= film_size()) {
+        return;
+    }
+
     sample_init(id.xy, imm.sample_number);
 
     let wavelengths = film_wavelengths_sample();
@@ -28,13 +32,9 @@ fn main(
 
     let result = shape_raycast(ShapeId(0), ray, FLOAT_MAX);
 
-    let d = dot(result.n, ray.d);
-    let value = select(
-        vec3(d, d / 2, 0),
-        vec3(0, -d / 2, -d),
-        d < 0
-    );
+    let d = abs(dot(result.n, ray.d));
 
-    // film_add_sample(id.xy, wavelengths, vec4(abs(ray.d), 1.0));
-    film_add_sample(id.xy, wavelengths, vec4(value, 1.0));
+    let value = d * spectrum_sample(SPECTRUM_D65_1NIT, wavelengths)
+        / film_wavelengths_pdf(wavelengths);
+    film_add_sample(id.xy, wavelengths, value);
 }

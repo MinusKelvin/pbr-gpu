@@ -1,12 +1,8 @@
 #import /sampler.wgsl
-#import /spectra.wgsl
+#import /spectrum.wgsl
 
 @group(1) @binding(0)
 var xyz_texture: texture_storage_2d<rgba32float, read_write>;
-
-struct Wavelengths {
-    l: vec4f,
-}
 
 fn film_wavelengths_sample() -> Wavelengths {
     let first = sample_1d();
@@ -24,6 +20,14 @@ fn film_size() -> vec2u {
 }
 
 fn film_add_sample(px: vec2u, wl: Wavelengths, radiance: vec4f) {
-    // todo: color matching functions
-    textureStore(xyz_texture, px, radiance + textureLoad(xyz_texture, px));
+    let old = textureLoad(xyz_texture, px);
+    let mean = old.xyz;
+    let samples = old.w + 1;
+    let new_sample = vec3f(
+        dot(spectrum_sample(SPECTRUM_CIE_X, wl) * radiance, vec4f(0.25)),
+        dot(spectrum_sample(SPECTRUM_CIE_Y, wl) * radiance, vec4f(0.25)),
+        dot(spectrum_sample(SPECTRUM_CIE_Z, wl) * radiance, vec4f(0.25)),
+    );
+    let update = (new_sample - mean) / samples;
+    textureStore(xyz_texture, px, old + vec4f(update, 1));
 }

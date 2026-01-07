@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use wgpu::util::DeviceExt;
 
 use crate::scene::{Scene, Sphere};
 
 mod scene;
 mod shader;
+mod spectrum;
 
 fn main() {
     let instance = wgpu::Instance::new(&Default::default());
@@ -19,7 +20,7 @@ fn main() {
             | wgpu::Features::IMMEDIATES,
         required_limits: wgpu::Limits {
             max_immediate_size: 64,
-            ..wgpu::Limits::default().using_resolution(adapter.limits())
+            ..wgpu::Limits::default().using_resolution(dbg!(adapter.limits()))
         },
         ..Default::default()
     }))
@@ -71,13 +72,15 @@ fn main() {
         contents: bytemuck::bytes_of(&ProjectiveCamera {
             ndc_to_camera: Transform::from(ndc_to_camera),
             world_to_camera: Transform::from(world_to_camera),
-            lens_radius: 0.5,
+            lens_radius: 0.0,
             focal_distance: 5.0,
             orthographic: ortho as u32,
             _padding: 0,
         }),
         usage: wgpu::BufferUsages::STORAGE,
     });
+
+    let spectra_buffer = spectrum::load_spectrums(&device);
 
     let statics_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -92,16 +95,8 @@ fn main() {
                 },
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
+            storage_buffer_entry(1),
+            storage_buffer_entry(2),
         ],
     });
 
@@ -118,6 +113,10 @@ fn main() {
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: camera_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: spectra_buffer.as_entire_binding(),
             },
         ],
     });
@@ -165,8 +164,10 @@ fn main() {
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &scene_bg, &[]);
         pass.set_bind_group(1, &statics_bg, &[]);
-        pass.set_immediates(0, bytemuck::bytes_of(&0u32));
-        pass.dispatch_workgroups(1024, 512, 1);
+        for i in 0u32..1 {
+            pass.set_immediates(0, bytemuck::bytes_of(&i));
+            pass.dispatch_workgroups((1024 + 7) / 8, (512 + 7) / 8, 1);
+        }
     }
 
     encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
@@ -184,10 +185,22 @@ fn main() {
 
     let size = (target.width(), target.height());
     download_texture(&device, &mut encoder, &target, move |data| {
-        image::RgbaImage::from_vec(
+        const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
+            [0.4124, 0.3576, 0.1805],
+            [0.2126, 0.7152, 0.0722],
+            [0.0193, 0.1192, 0.9505],
+        ]);
+        let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
+
+        image::RgbImage::from_vec(
             size.0,
             size.1,
-            data.into_iter().map(|v| (v * 255.0) as u8).collect(),
+            data.into_iter()
+                .map(Vec4::from_array)
+                .map(|xyza| xyz_to_srgb * xyza.xyz())
+                .map(|rgb| (rgb * 255.0).as_u8vec3())
+                .flat_map(|rgb| rgb.to_array())
+                .collect(),
         )
         .unwrap()
         .save("img.png")
@@ -203,7 +216,7 @@ fn download_texture(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
     texture: &wgpu::Texture,
-    downloaded: impl FnOnce(Vec<f32>) + Send + 'static,
+    downloaded: impl FnOnce(Vec<[f32; 4]>) + Send + 'static,
 ) {
     let bytes_per_row = (texture.width() * 16).next_multiple_of(256);
 
@@ -233,10 +246,10 @@ fn download_texture(
         result.unwrap();
 
         let data = buffer.get_mapped_range(..);
-        let data: &[f32] = bytemuck::cast_slice(&data);
+        let data: &[[f32; 4]] = bytemuck::cast_slice(&data);
         let data: Vec<_> = data
-            .chunks_exact(bytes_per_row as usize / 4)
-            .flat_map(|chunk| chunk[..width * 4].iter().copied())
+            .chunks_exact(bytes_per_row as usize / 16)
+            .flat_map(|chunk| chunk[..width].iter().copied())
             .collect();
 
         downloaded(data);
@@ -263,6 +276,19 @@ fn download_buffer(
         result.unwrap();
         downloaded(&buffer.get_mapped_range(..));
     });
+}
+
+fn storage_buffer_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
 }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]

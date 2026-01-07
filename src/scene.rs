@@ -1,6 +1,8 @@
 use bytemuck::{NoUninit, Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
+use crate::storage_buffer_entry;
+
 pub struct Scene {
     pub spheres: Vec<Sphere>,
 }
@@ -20,7 +22,7 @@ impl Scene {
 pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scene"),
-        entries: &[make_layout_entry(0)],
+        entries: &[storage_buffer_entry(0)],
     })
 }
 
@@ -36,19 +38,6 @@ fn make_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
     wgpu::BindGroupEntry {
         binding,
         resource: buffer.as_entire_binding(),
-    }
-}
-
-fn make_layout_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only: true },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
     }
 }
 
