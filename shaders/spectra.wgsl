@@ -1,0 +1,4 @@
+const WAVELENGTH_MIN: f32 = 360;
+const WAVELENGTH_MAX: f32 = 830;
+
+
