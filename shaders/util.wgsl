@@ -59,3 +59,8 @@ fn sample_uniform_disk(random: vec2f) -> vec2f {
 
     return r * vec2f(cos(theta), sin(theta));
 }
+
+fn difference_of_products(a1: f32, a2: f32, b1: f32, b2: f32) -> f32 {
+    // todo: improve accuracy
+    return a1 * a2 - b1 * b2;
+}

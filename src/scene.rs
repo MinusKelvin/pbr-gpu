@@ -1,20 +1,31 @@
 use bytemuck::{NoUninit, Pod, Zeroable};
+use glam::Vec3;
 use wgpu::util::DeviceExt;
 
 use crate::storage_buffer_entry;
 
 pub struct Scene {
     pub spheres: Vec<Sphere>,
+    pub triangles: Vec<Triangle>,
+
+    pub triangle_vertices: Vec<TriVertex>,
 }
 
 impl Scene {
     pub fn make_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
         let spheres = make_buffer(device, &self.spheres);
+        let triangles = make_buffer(device, &self.triangles);
+
+        let triangle_vertices = make_buffer(device, &self.triangle_vertices);
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
             layout: &bind_group_layout(device),
-            entries: &[make_entry(0, &spheres)],
+            entries: &[
+                make_entry(0, &spheres),
+                make_entry(1, &triangles),
+                make_entry(16, &triangle_vertices),
+            ],
         })
     }
 }
@@ -22,7 +33,11 @@ impl Scene {
 pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("scene"),
-        entries: &[storage_buffer_entry(0)],
+        entries: &[
+            storage_buffer_entry(0),
+            storage_buffer_entry(1),
+            storage_buffer_entry(16),
+        ],
     })
 }
 
@@ -55,4 +70,17 @@ impl Sphere {
         z_max: 1.0,
         flip_normal: false as u32,
     };
+}
+
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct Triangle {
+    pub vertices: [u32; 3],
+}
+
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct TriVertex {
+    pub p: Vec3,
+    pub _padding: u32,
 }

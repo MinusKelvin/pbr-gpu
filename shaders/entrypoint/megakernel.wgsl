@@ -30,9 +30,9 @@ fn main(
 
     let ray = camera_sample_ray(film_position_ndc);
 
-    let result = shape_raycast(ShapeId(0), ray, FLOAT_MAX);
+    let result = scene_raycast(ray);
 
-    let d = abs(dot(result.n, ray.d));
+    let d = f32(result.hit) * max(0.1, dot(result.n, -ray.d));
 
     let value = d * spectrum_sample(SPECTRUM_D65_1NIT, wavelengths)
         / film_wavelengths_pdf(wavelengths);

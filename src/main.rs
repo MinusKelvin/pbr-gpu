@@ -1,16 +1,33 @@
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
+use clap::Parser;
 use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use wgpu::util::DeviceExt;
 
-use crate::scene::{Scene, Sphere};
+use crate::scene::{Scene, Sphere, TriVertex, Triangle};
 
 mod scene;
 mod shader;
 mod spectrum;
 
+#[derive(Parser)]
+struct Options {
+    #[clap(short = 'W', long, default_value = "960")]
+    width: u32,
+    #[clap(short = 'H', long, default_value = "480")]
+    height: u32,
+
+    #[clap(short, long, default_value = "128")]
+    samples: u32,
+}
+
 fn main() {
+    let options = Options::parse();
+
+    let width = options.width;
+    let height = options.height;
+
     let instance = wgpu::Instance::new(&Default::default());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -40,6 +57,23 @@ fn main() {
             z_max: 0.8,
             flip_normal: false as u32,
         }],
+        triangles: vec![Triangle {
+            vertices: [0, 1, 2],
+        }],
+        triangle_vertices: vec![
+            TriVertex {
+                p: Vec3::new(-1.0, -1.0, -10.0),
+                _padding: 0,
+            },
+            TriVertex {
+                p: Vec3::new(1.0, -1.0, -10.0),
+                _padding: 0,
+            },
+            TriVertex {
+                p: Vec3::new(0.0, 1.0, -10.0),
+                _padding: 0,
+            },
+        ],
     };
 
     let scene_bg = scene.make_bind_group(&device);
@@ -47,8 +81,8 @@ fn main() {
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("target"),
         size: wgpu::Extent3d {
-            width: 1024,
-            height: 512,
+            width,
+            height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -61,10 +95,11 @@ fn main() {
 
     let world_to_camera = Mat4::look_at_lh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
 
+    let aspect = width as f32 / height as f32;
     let ortho = false;
     let ndc_to_camera = match ortho {
-        false => Mat4::perspective_infinite_lh(30f32.to_radians(), 2.0, 1.0).inverse(),
-        true => Mat4::orthographic_lh(-2.0, 2.0, -1.0, 1.0, 0.0, 1.0).inverse(),
+        false => Mat4::perspective_infinite_lh(30f32.to_radians(), aspect, 1.0).inverse(),
+        true => Mat4::orthographic_lh(-aspect as f32, aspect, -1.0, 1.0, 0.0, 1.0).inverse(),
     };
 
     let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -73,7 +108,7 @@ fn main() {
             ndc_to_camera: Transform::from(ndc_to_camera),
             world_to_camera: Transform::from(world_to_camera),
             lens_radius: 0.0,
-            focal_distance: 5.0,
+            focal_distance: 5.9,
             orthographic: ortho as u32,
             _padding: 0,
         }),
@@ -164,9 +199,9 @@ fn main() {
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &scene_bg, &[]);
         pass.set_bind_group(1, &statics_bg, &[]);
-        for i in 0u32..1 {
+        for i in 0u32..options.samples {
             pass.set_immediates(0, bytemuck::bytes_of(&i));
-            pass.dispatch_workgroups((1024 + 7) / 8, (512 + 7) / 8, 1);
+            pass.dispatch_workgroups((width + 7) / 8, (height + 7) / 8, 1);
         }
     }
 
@@ -183,7 +218,6 @@ fn main() {
         );
     });
 
-    let size = (target.width(), target.height());
     download_texture(&device, &mut encoder, &target, move |data| {
         const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
             [0.4124, 0.3576, 0.1805],
@@ -193,8 +227,8 @@ fn main() {
         let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
 
         image::RgbImage::from_vec(
-            size.0,
-            size.1,
+            width,
+            height,
             data.into_iter()
                 .map(Vec4::from_array)
                 .map(|xyza| xyz_to_srgb * xyza.xyz())

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bytemuck = "1.24.0"
+clap = { version = "4.5.54", features = ["derive"] }
 glam = { version = "0.30.9", features = ["bytemuck"] }
 image = "0.25.9"
 ordered-float = "5.1.0"
