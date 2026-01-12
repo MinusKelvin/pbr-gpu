@@ -1,0 +1,77 @@
+use std::collections::HashMap;
+use std::path::Path;
+
+use glam::DVec3;
+
+use super::{SceneBuilder, Props, Value};
+
+grammar(builder: &mut SceneBuilder);
+
+pub TopLevel = Statement*;
+
+Statement: () = {
+    "Include" <String> => builder.include(Path::new(<>)),
+    "WorldBegin" => builder.world_begin(),
+    "AttributeBegin" => builder.push(),
+    "AttributeEnd" => builder.pop(),
+
+    "Identity" => builder.identity(),
+    "LookAt" <MaybeBracketed<(Vec3 Vec3 Vec3)>> => builder.look_at(<>),
+    "Rotate" <MaybeBracketed<(Number Vec3)>> => builder.rotate(<>),
+    "Translate" <MaybeBracketed<Vec3>> => builder.translate(<>),
+    "Scale" <MaybeBracketed<Vec3>> => builder.scale(<>),
+
+    "Camera" <String> <Properties> => builder.camera(<>),
+
+    "Shape" <ty:String> <props:Properties> => match ty {
+        "sphere" => builder.sphere(props),
+        "trianglemesh" => builder.triangle_mesh(props),
+        "loopsubdiv" => builder.loop_subdivision_surface(props),
+        _ => builder.unrecognized_shape(ty),
+    },
+
+    Ident ! => builder.unrecognized(<>),
+}
+
+Properties: Props<'input> = {
+    <p:Properties?> <k:PropName> <v:Values> => {
+        let (ty, k) = k;
+        let mut p = p.unwrap_or_default();
+        p.map.insert(k, (ty, v));
+        p
+    },
+}
+
+Values: Vec<Value<'input>> = {
+    Value => vec![<>],
+    "[" <Value*> "]" => <>,
+}
+
+Value: Value<'input> = {
+    String => Value::String(<>),
+    Number => Value::Number(<>),
+    "true" => Value::Boolean(true),
+    "false" => Value::Boolean(false),
+}
+
+MaybeBracketed<T> = {
+    "[" <T> "]",
+    T
+}
+
+PropName: (&'input str, &'input str) = String => <>.split_once(' ').unwrap();
+
+Vec3: DVec3 = Number Number Number => DVec3::new(<>);
+
+Number: f64 = r"-?(\d+(\.\d*)?|\.\d+)(e-?\d+)?" => <>.parse().unwrap();
+
+String: &'input str = r#""[^"]*""# => <>.trim_matches('"');
+
+Ident: &'input str = r"[a-zA-Z]\w*";
+
+match {
+    r"#[^\n]*" => {},
+    r"\s*" => {},
+} else {
+    _
+}

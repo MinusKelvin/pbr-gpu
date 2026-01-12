@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
@@ -7,29 +8,39 @@ use wgpu::util::DeviceExt;
 
 use crate::scene::{Scene, Sphere, TriVertex, Triangle};
 
+mod loader;
+mod options;
 mod scene;
 mod shader;
 mod spectrum;
 
 #[derive(Parser)]
 struct Options {
-    #[clap(short = 'W', long, default_value = "960")]
-    width: u32,
-    #[clap(short = 'H', long, default_value = "480")]
-    height: u32,
+    #[clap(short = 'W', long)]
+    width: Option<u32>,
+    #[clap(short = 'H', long)]
+    height: Option<u32>,
 
     #[clap(short, long, default_value = "128")]
     samples: u32,
+
+    scene: PathBuf,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let options = Options::parse();
 
-    let width = options.width;
-    let height = options.height;
+    let (mut render_options, scene) = loader::pbrt::load_pbrt_scene(&options.scene);
+
+    if let Some(width) = options.width {
+        render_options.width = width;
+    }
+    if let Some(height) = options.height {
+        render_options.height = height;
+    }
 
     let instance = wgpu::Instance::new(&Default::default());
-    let adapter = pollster::block_on(instance.request_adapter(&Default::default())).unwrap();
+    let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_features: wgpu::Features::TIMESTAMP_QUERY
             | wgpu::Features::SHADER_INT64
@@ -37,11 +48,10 @@ fn main() {
             | wgpu::Features::IMMEDIATES,
         required_limits: wgpu::Limits {
             max_immediate_size: 64,
-            ..wgpu::Limits::default().using_resolution(dbg!(adapter.limits()))
+            ..wgpu::Limits::default().using_resolution(adapter.limits())
         },
         ..Default::default()
-    }))
-    .unwrap();
+    }))?;
 
     let flags = [
         ("sampler".to_owned(), "independent".to_owned()),
@@ -49,40 +59,15 @@ fn main() {
     ]
     .into_iter()
     .collect();
-    let shader = shader::load_shader(&device, "entrypoint/megakernel.wgsl", &flags);
-
-    let scene = Scene {
-        spheres: vec![Sphere {
-            z_min: -0.9,
-            z_max: 0.8,
-            flip_normal: false as u32,
-        }],
-        triangles: vec![Triangle {
-            vertices: [0, 1, 2],
-        }],
-        triangle_vertices: vec![
-            TriVertex {
-                p: Vec3::new(-1.0, -1.0, -10.0),
-                _padding: 0,
-            },
-            TriVertex {
-                p: Vec3::new(1.0, -1.0, -10.0),
-                _padding: 0,
-            },
-            TriVertex {
-                p: Vec3::new(0.0, 1.0, -10.0),
-                _padding: 0,
-            },
-        ],
-    };
+    let shader = shader::load_shader(&device, "entrypoint/megakernel.wgsl", &flags)?;
 
     let scene_bg = scene.make_bind_group(&device);
 
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("target"),
         size: wgpu::Extent3d {
-            width,
-            height,
+            width: render_options.width,
+            height: render_options.height,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -93,25 +78,9 @@ fn main() {
         view_formats: &[],
     });
 
-    let world_to_camera = Mat4::look_at_lh(Vec3::new(0.0, 0.0, 5.0), Vec3::ZERO, Vec3::Y);
-
-    let aspect = width as f32 / height as f32;
-    let ortho = false;
-    let ndc_to_camera = match ortho {
-        false => Mat4::perspective_infinite_lh(30f32.to_radians(), aspect, 1.0).inverse(),
-        true => Mat4::orthographic_lh(-aspect as f32, aspect, -1.0, 1.0, 0.0, 1.0).inverse(),
-    };
-
     let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
-        contents: bytemuck::bytes_of(&ProjectiveCamera {
-            ndc_to_camera: Transform::from(ndc_to_camera),
-            world_to_camera: Transform::from(world_to_camera),
-            lens_radius: 0.0,
-            focal_distance: 5.9,
-            orthographic: ortho as u32,
-            _padding: 0,
-        }),
+        contents: bytemuck::bytes_of(&render_options.camera),
         usage: wgpu::BufferUsages::STORAGE,
     });
 
@@ -201,7 +170,11 @@ fn main() {
         pass.set_bind_group(1, &statics_bg, &[]);
         for i in 0u32..options.samples {
             pass.set_immediates(0, bytemuck::bytes_of(&i));
-            pass.dispatch_workgroups((width + 7) / 8, (height + 7) / 8, 1);
+            pass.dispatch_workgroups(
+                (render_options.width + 7) / 8,
+                (render_options.height + 7) / 8,
+                1,
+            );
         }
     }
 
@@ -227,8 +200,8 @@ fn main() {
         let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
 
         image::RgbImage::from_vec(
-            width,
-            height,
+            render_options.width,
+            render_options.height,
             data.into_iter()
                 .map(Vec4::from_array)
                 .map(|xyza| xyz_to_srgb * xyza.xyz())
@@ -243,7 +216,9 @@ fn main() {
 
     queue.submit([encoder.finish()]);
 
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    device.poll(wgpu::PollType::wait_indefinitely())?;
+
+    Ok(())
 }
 
 fn download_texture(
@@ -343,11 +318,18 @@ struct Transform {
     m_inv: Mat4,
 }
 
-impl From<Mat4> for Transform {
-    fn from(value: Mat4) -> Self {
+impl Transform {
+    fn from_mat4(value: Mat4) -> Self {
         Self {
             m: value,
             m_inv: value.inverse(),
+        }
+    }
+
+    fn from_mat4_inverse(inverse: Mat4) -> Self {
+        Self {
+            m: inverse.inverse(),
+            m_inv: inverse,
         }
     }
 }

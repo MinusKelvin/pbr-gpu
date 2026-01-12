@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.100"
 bytemuck = "1.24.0"
 clap = { version = "4.5.54", features = ["derive"] }
 glam = { version = "0.30.9", features = ["bytemuck"] }
 image = "0.25.9"
+lalrpop-util = { version = "0.22.2", features = ["lexer"] }
 ordered-float = "5.1.0"
 pollster = "0.4.0"
 wgpu = "28.0.0"
+
+[build-dependencies]
+lalrpop = "0.22.2"

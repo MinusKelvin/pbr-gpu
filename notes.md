@@ -29,6 +29,16 @@ Interactions should therefore track not only which primitive they hit, but which
     - requires knowing the path to the instance in the BVH/SVO, which we obtain during traversal
 3. Ask the shape for the PDF of sampling the point
 
+# alternative
+
+We could manually impl the stack for traversal.
+That way the TLAS and BLAS both use the same stack for acceleration structure traversal.
+Additionally, transform nodes can appear, which makes the whole BLAS thing more possible.
+It also allows instancing-within-instancing, which is cool.
+We will need to implement a similar system for mix materials and mix textures, if we ever add support for those.
+The only wrinkle is that arbitrarily composing these kinds of things makes lights in instanced objects even more difficult, since every instancing level requires an additional light sampling path to be traversed to find the light sampling probability for MIS.
+One issue is maintaining the stack for transform nodes, which require saving the original ray since we don't want to lose precision by un-transforming the ray.
+
 # radeon gpu profiler capture
 
 remove submits after the work, then use `MESA_VK_TRACE_PER_SUBMIT=1 MESA_VK_TRACE=rgp` env vars.

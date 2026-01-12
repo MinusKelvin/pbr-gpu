@@ -21,7 +21,8 @@ fn load_data() -> Result<Vec<f32>, Box<dyn Error>> {
     // scale XYZ such that 1 W of 555nm light is 683.002 nits
     let [x, y, z] = load_spectrum("spectrum/CIE_xyz_1931_2deg.csv", 683.002)?;
     let y_int = y.iter().sum::<f32>();
-    // scale D65 to 1 nit brightness. standard D65 is scaled such that int(D65*Y) = 100
+    // scale D65 to 1 nit brightness.
+    // standard D65 is scaled such that int(D65*Y) = 100 when Y is scaled to have integral 1
     let [d65] = load_spectrum("spectrum/CIE_std_illum_D65.csv", 1.0 / (y_int * 100.0))?;
 
     let mut result = vec![];

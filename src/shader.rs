@@ -1,22 +1,21 @@
 use std::collections::{HashMap, HashSet};
-use std::io::Result;
 use std::path::{Path, PathBuf};
+
+use anyhow::Result;
 
 pub fn load_shader(
     device: &wgpu::Device,
     path: &str,
     flags: &HashMap<String, String>,
-) -> wgpu::ShaderModule {
+) -> Result<wgpu::ShaderModule> {
     let mut output = String::new();
 
-    read_shader(&mut output, path.as_ref(), flags, &mut HashSet::new())
-        .inspect_err(|e| eprintln!("Error reading shader: {e}"))
-        .unwrap();
+    read_shader(&mut output, path.as_ref(), flags, &mut HashSet::new())?;
 
-    device.create_shader_module(wgpu::ShaderModuleDescriptor {
+    Ok(device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some(path),
         source: wgpu::ShaderSource::Wgsl(output.into()),
-    })
+    }))
 }
 
 fn read_shader(
@@ -84,7 +83,7 @@ fn pre_process<'a>(
                 }
             }
 
-            _ => return Err(error(in_file, i, "unrecognized directive")),
+            _ => anyhow::bail!("{}:{}: unrecognized directive", in_file.display(), i + 1),
         }
     }
 
@@ -111,6 +110,6 @@ fn resolve_path(in_file: &Path, i: usize, path: &str) -> Result<PathBuf> {
     Ok(new_path)
 }
 
-fn error(path: &Path, i: usize, reason: &str) -> std::io::Error {
-    std::io::Error::other(format!("{}:{}: {reason}", path.display(), i + 1))
+fn error(path: &Path, i: usize, reason: &str) -> anyhow::Error {
+    anyhow::anyhow!(format!("{}:{}: {reason}", path.display(), i + 1))
 }
