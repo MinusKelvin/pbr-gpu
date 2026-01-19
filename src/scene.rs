@@ -118,8 +118,28 @@ impl Scene {
             let axis = total_bounds.size().max_position();
             objs.sort_by_key(|(_, bb)| ordered_float::OrderedFloat(bb.centroid()[axis]));
 
-            // todo: SAH
-            let (left, right) = objs.split_at_mut(objs.len() / 2);
+            let mut costs = vec![0.0; objs.len() - 1];
+
+            let mut bb = objs[0].1.clone();
+            for i in 1..objs.len() {
+                costs[i - 1] += i as f32 * bb.surface_area();
+                bb = bb.union(&objs[i].1);
+            }
+
+            let mut bb = objs.last().unwrap().1.clone();
+            for i in 1..objs.len() {
+                costs[objs.len() - 1 - i] += i as f32 * bb.surface_area();
+                bb = bb.union(&objs[objs.len() - 1 - i].1);
+            }
+
+            let split = 1 + costs
+                .iter()
+                .enumerate()
+                .min_by_key(|&(_, &cost)| ordered_float::OrderedFloat(cost))
+                .unwrap()
+                .0;
+
+            let (left, right) = objs.split_at_mut(split);
 
             let left_node = self.build_bvh(left);
             assert_eq!(id as u32 + 1, left_node & NODE_IDX_MASK);
@@ -148,6 +168,13 @@ impl Scene {
         match node & NODE_TAG_MASK {
             NODE_TAG_PRIMITIVE => {
                 self.shape_bounds(self.primitive_nodes[(node & NODE_IDX_MASK) as usize].shape)
+            }
+            NODE_TAG_BVH => {
+                let bvh = &self.bvh_nodes[(node & NODE_IDX_MASK) as usize];
+                Bounds {
+                    min: bvh.min,
+                    max: bvh.max,
+                }
             }
             _ => unreachable!(),
         }
