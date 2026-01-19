@@ -10,6 +10,12 @@ pub struct Scene {
     pub triangles: Vec<Triangle>,
 
     pub triangle_vertices: Vec<TriVertex>,
+
+    pub bvh_nodes: Vec<BvhNode>,
+    pub transform_nodes: Vec<TransformNode>,
+    pub primitive_nodes: Vec<PrimitiveNode>,
+
+    pub root: u32,
 }
 
 const SHAPE_TAG_BITS: u32 = 1;
@@ -19,12 +25,26 @@ const SHAPE_TAG_MASK: u32 = !SHAPE_IDX_MASK;
 const SHAPE_TAG_SPHERE: u32 = 0 << SHAPE_TAG_SHIFT;
 const SHAPE_TAG_TRIANGLE: u32 = 1 << SHAPE_TAG_SHIFT;
 
+const NODE_TAG_BITS: u32 = 2;
+const NODE_TAG_SHIFT: u32 = 32 - NODE_TAG_BITS;
+const NODE_IDX_MASK: u32 = (1 << NODE_TAG_SHIFT) - 1;
+const NODE_TAG_MASK: u32 = !NODE_IDX_MASK;
+const NODE_TAG_BVH: u32 = 0 << NODE_TAG_SHIFT;
+const NODE_TAG_TRANSFORM: u32 = 1 << NODE_TAG_SHIFT;
+const NODE_TAG_PRIMITIVE: u32 = 2 << NODE_TAG_SHIFT;
+
 impl Scene {
     pub fn make_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
         let spheres = make_buffer(device, &self.spheres);
         let triangles = make_buffer(device, &self.triangles);
 
         let triangle_vertices = make_buffer(device, &self.triangle_vertices);
+
+        let bvh = make_buffer(device, &self.bvh_nodes);
+        let transform = make_buffer(device, &self.transform_nodes);
+        let primitive = make_buffer(device, &self.primitive_nodes);
+
+        let root = make_buffer(device, &self.root.to_le_bytes());
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
@@ -33,6 +53,10 @@ impl Scene {
                 make_entry(0, &spheres),
                 make_entry(1, &triangles),
                 make_entry(16, &triangle_vertices),
+                make_entry(32, &root),
+                make_entry(33, &bvh),
+                make_entry(34, &transform),
+                make_entry(35, &primitive),
             ],
         })
     }
@@ -56,6 +80,78 @@ impl Scene {
             .extend(indices.iter().map(|&is| Triangle { vertices: is }));
         base_idx | SHAPE_TAG_TRIANGLE
     }
+
+    pub fn add_primitive(&mut self, prim: PrimitiveNode) -> u32 {
+        let idx = self.primitive_nodes.len() as u32;
+        self.primitive_nodes.push(prim);
+        idx | NODE_TAG_PRIMITIVE
+    }
+
+    pub fn add_bvh(&mut self, nodes: &[u32]) -> u32 {
+        let mut bounded_objects: Vec<_> =
+            nodes.iter().map(|&id| (id, self.node_bounds(id))).collect();
+
+        self.build_bvh(&mut bounded_objects)
+    }
+
+    fn build_bvh(&mut self, objs: &mut [(u32, Bounds)]) -> u32 {
+        assert!(!objs.is_empty());
+
+        let id = self.bvh_nodes.len();
+        self.bvh_nodes.push(BvhNode {
+            min: Vec3::ZERO,
+            flags: 0,
+            max: Vec3::ZERO,
+            far_node: 0,
+        });
+
+        if let &mut [(node, ref bounds)] = objs {
+            self.bvh_nodes[id].min = bounds.min;
+            self.bvh_nodes[id].max = bounds.max;
+            self.bvh_nodes[id].far_node = node;
+            self.bvh_nodes[id].flags = 0;
+        } else {
+            let total_bounds = objs
+                .iter()
+                .fold(objs[0].1.clone(), |acc, (_, bb)| acc.union(bb));
+
+            let axis = total_bounds.size().max_position();
+            objs.sort_by_key(|(_, bb)| ordered_float::OrderedFloat(bb.centroid()[axis]));
+
+            // todo: SAH
+            let (left, right) = objs.split_at_mut(objs.len() / 2);
+
+            let left_node = self.build_bvh(left);
+            assert_eq!(id as u32 + 1, left_node & NODE_IDX_MASK);
+            let right_node = self.build_bvh(right);
+
+            self.bvh_nodes[id].min = total_bounds.min;
+            self.bvh_nodes[id].max = total_bounds.max;
+            self.bvh_nodes[id].far_node = right_node;
+            self.bvh_nodes[id].flags = 1 << axis;
+        }
+
+        id as u32 | NODE_TAG_BVH
+    }
+
+    fn shape_bounds(&self, shape: u32) -> Bounds {
+        match shape & SHAPE_TAG_MASK {
+            SHAPE_TAG_SPHERE => self.spheres[(shape & SHAPE_IDX_MASK) as usize].bounds(),
+            SHAPE_TAG_TRIANGLE => {
+                self.triangles[(shape & SHAPE_IDX_MASK) as usize].bounds(&self.triangle_vertices)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn node_bounds(&self, node: u32) -> Bounds {
+        match node & NODE_TAG_MASK {
+            NODE_TAG_PRIMITIVE => {
+                self.shape_bounds(self.primitive_nodes[(node & NODE_IDX_MASK) as usize].shape)
+            }
+            _ => unreachable!(),
+        }
+    }
 }
 
 pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -65,6 +161,10 @@ pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             storage_buffer_entry(0),
             storage_buffer_entry(1),
             storage_buffer_entry(16),
+            storage_buffer_entry(32),
+            storage_buffer_entry(33),
+            storage_buffer_entry(34),
+            storage_buffer_entry(35),
         ],
     })
 }
@@ -115,4 +215,87 @@ pub struct Triangle {
 pub struct TriVertex {
     pub p: Vec3,
     pub _padding: u32,
+}
+
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct BvhNode {
+    pub min: Vec3,
+    pub flags: u32,
+    pub max: Vec3,
+    pub far_node: u32,
+}
+
+const BVH_FLAG_X: u32 = 1 << 0;
+const BVH_FLAG_Y: u32 = 1 << 1;
+const BVH_FLAG_Z: u32 = 1 << 2;
+
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct TransformNode {
+    pub transform: Transform,
+    pub object: u32,
+    pub _padding: [u32; 3],
+}
+
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[repr(C)]
+pub struct PrimitiveNode {
+    pub shape: u32,
+}
+
+impl Sphere {
+    fn bounds(&self) -> Bounds {
+        Bounds {
+            min: Vec3::new(-1.0, -1.0, self.z_min),
+            max: Vec3::new(1.0, 1.0, self.z_max),
+        }
+    }
+}
+
+impl Triangle {
+    fn bounds(&self, verts: &[TriVertex]) -> Bounds {
+        Bounds::from_points(self.vertices.iter().map(|&id| verts[id as usize].p))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Bounds {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl Bounds {
+    fn from_points(mut points: impl Iterator<Item = Vec3>) -> Self {
+        let first = points.next().unwrap();
+        let mut this = Bounds {
+            min: first,
+            max: first,
+        };
+        for p in points {
+            this.min = this.min.min(p);
+            this.max = this.max.max(p);
+        }
+        this
+    }
+
+    fn surface_area(&self) -> f32 {
+        let size = self.size();
+        2.0 * (size.x * size.y + size.x * size.z + size.y * size.z)
+    }
+
+    fn union(&self, other: &Bounds) -> Bounds {
+        Bounds {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+        }
+    }
+
+    fn size(&self) -> Vec3 {
+        self.max - self.min
+    }
+
+    fn centroid(&self) -> Vec3 {
+        (self.min + self.max) * 0.5
+    }
 }

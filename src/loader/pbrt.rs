@@ -5,7 +5,7 @@ use glam::{DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
-use crate::scene::{Scene, Sphere};
+use crate::scene::{PrimitiveNode, Scene, Sphere};
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
@@ -19,8 +19,12 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
         stack: vec![],
         render_options: RenderOptions::default(),
         scene: Scene::default(),
+        current_prims: vec![],
     };
     builder.include(Path::new(path.file_name().unwrap()));
+
+    let root = builder.scene.add_bvh(&builder.current_prims);
+    builder.scene.root = root;
 
     (builder.render_options, builder.scene)
 }
@@ -32,6 +36,8 @@ pub struct SceneBuilder {
 
     render_options: RenderOptions,
     scene: Scene,
+
+    current_prims: Vec<u32>,
 }
 
 #[derive(Clone)]
@@ -123,6 +129,10 @@ impl SceneBuilder {
             z_max: (z_max / radius) as f32,
             flip_normal: false as u32,
         });
+
+        let primitive = self.scene.add_primitive(PrimitiveNode { shape: shape_id });
+
+        self.current_prims.push(primitive);
     }
 
     fn triangle_mesh(&mut self, props: Props) {
@@ -136,12 +146,18 @@ impl SceneBuilder {
             .collect();
 
         let base_index = self.scene.add_triangle_vertices(&positions);
-        let base_shape_id = self.scene.add_triangles(
-            &indices
-                .chunks_exact(3)
-                .map(|is| [is[0] + base_index, is[1] + base_index, is[2] + base_index])
-                .collect::<Vec<_>>(),
-        );
+        let tris = indices
+            .chunks_exact(3)
+            .map(|is| [is[0] + base_index, is[1] + base_index, is[2] + base_index])
+            .collect::<Vec<_>>();
+        let base_shape_id = self.scene.add_triangles(&tris);
+
+        for i in 0..tris.len() {
+            let primitive = self.scene.add_primitive(PrimitiveNode {
+                shape: base_shape_id + i as u32,
+            });
+            self.current_prims.push(primitive);
+        }
     }
 
     fn loop_subdivision_surface(&mut self, props: Props) {
