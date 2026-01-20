@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bytemuck::{NoUninit, Pod, Zeroable};
 use glam::Vec3;
 use wgpu::util::DeviceExt;
@@ -88,10 +90,15 @@ impl Scene {
     }
 
     pub fn add_bvh(&mut self, nodes: &[u32]) -> u32 {
+        let t = Instant::now();
+
         let mut bounded_objects: Vec<_> =
             nodes.iter().map(|&id| (id, self.node_bounds(id))).collect();
+        let result = self.build_bvh(&mut bounded_objects);
 
-        self.build_bvh(&mut bounded_objects)
+        eprintln!("Build BVH in {:.3?}", t.elapsed());
+
+        result
     }
 
     fn build_bvh(&mut self, objs: &mut [(u32, Bounds)]) -> u32 {

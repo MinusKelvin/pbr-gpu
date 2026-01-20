@@ -48,6 +48,8 @@ fn main() -> anyhow::Result<()> {
             | wgpu::Features::IMMEDIATES,
         required_limits: wgpu::Limits {
             max_immediate_size: 64,
+            max_storage_buffer_binding_size: (2 << 30) - 4,
+            max_buffer_size: (2 << 30) - 4,
             ..wgpu::Limits::default().using_resolution(adapter.limits())
         },
         ..Default::default()

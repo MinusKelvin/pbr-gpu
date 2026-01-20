@@ -89,6 +89,10 @@ impl SceneBuilder {
         self.state.transform *= DMat4::from_scale(scale);
     }
 
+    fn transform(&mut self, mat: DMat4) {
+        self.state.transform *= mat;
+    }
+
     fn camera(&mut self, kind: &str, props: Props) {
         let aspect_ratio = props
             .get_float("frameaspectratio")
@@ -133,6 +137,8 @@ impl SceneBuilder {
         let primitive = self.scene.add_primitive(PrimitiveNode { shape: shape_id });
 
         self.current_prims.push(primitive);
+
+        eprintln!("Note: Sphere shape will not be transformed");
     }
 
     fn triangle_mesh(&mut self, props: Props) {
@@ -165,6 +171,32 @@ impl SceneBuilder {
         self.triangle_mesh(props);
     }
 
+    fn plymesh(&mut self, props: Props) {
+        let file = props
+            .get_string("filename")
+            .expect("plymesh shape requires file name");
+        let path = self.base.join(file);
+
+        if path.extension() == Some("gz".as_ref()) {
+            eprintln!("Cannot load compressed plymesh");
+            return;
+        }
+
+        if props.get_string("displacement").is_some() {
+            eprintln!("Note: plymesh tessellation displacement map will not be applied.");
+        }
+
+        let (base_shape, count) =
+            super::ply::load_plymesh(&mut self.scene, &path, self.state.transform);
+
+        for i in 0..count {
+            let primitive = self.scene.add_primitive(PrimitiveNode {
+                shape: base_shape + i as u32,
+            });
+            self.current_prims.push(primitive);
+        }
+    }
+
     fn unrecognized_shape(&mut self, ty: &str) {
         eprintln!("Unrecognized shape type {ty}");
     }
@@ -176,6 +208,10 @@ struct Props<'a> {
 }
 
 impl<'a> Props<'a> {
+    fn type_of(&self, name: &str) -> Option<&'a str> {
+        self.map.get(name).map(|&(ty, _)| ty)
+    }
+
     fn get_float(&self, name: &str) -> Option<f64> {
         self.map
             .get(name)
@@ -210,6 +246,14 @@ impl<'a> Props<'a> {
                     })
                     .collect()
             })
+    }
+
+    fn get_string(&self, name: &str) -> Option<&'a str> {
+        self.map
+            .get(name)
+            .filter(|&&(ty, _)| ty == "string" || ty == "texture")
+            .and_then(|(_, v)| v.get(0))
+            .and_then(Value::as_string)
     }
 }
 

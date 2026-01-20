@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use glam::DVec3;
+use glam::{DVec4, DMat4, DVec3};
 
 use super::{SceneBuilder, Props, Value};
 
@@ -20,6 +20,7 @@ Statement: () = {
     "Rotate" <MaybeBracketed<(Number Vec3)>> => builder.rotate(<>),
     "Translate" <MaybeBracketed<Vec3>> => builder.translate(<>),
     "Scale" <MaybeBracketed<Vec3>> => builder.scale(<>),
+    "Transform" <MaybeBracketed<Mat4>> => builder.transform(<>),
 
     "Camera" <String> <Properties> => builder.camera(<>),
 
@@ -27,6 +28,7 @@ Statement: () = {
         "sphere" => builder.sphere(props),
         "trianglemesh" => builder.triangle_mesh(props),
         "loopsubdiv" => builder.loop_subdivision_surface(props),
+        "plymesh" => builder.plymesh(props),
         _ => builder.unrecognized_shape(ty),
     },
 
@@ -62,6 +64,10 @@ MaybeBracketed<T> = {
 PropName: (&'input str, &'input str) = String => <>.split_once(' ').unwrap();
 
 Vec3: DVec3 = Number Number Number => DVec3::new(<>);
+
+Vec4: DVec4 = Number Number Number Number => DVec4::new(<>);
+
+Mat4: DMat4 = Vec4 Vec4 Vec4 Vec4 => DMat4::from_cols(<>);
 
 Number: f64 = r"-?(\d+(\.\d*)?|\.\d+)(e-?\d+)?" => <>.parse().unwrap();
 

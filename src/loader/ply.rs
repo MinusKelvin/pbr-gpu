@@ -1,0 +1,261 @@
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+
+use glam::{DMat4, Vec3};
+
+use crate::scene::{Scene, TriVertex};
+
+enum Format {
+    BinaryLe,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum PrimType {
+    Float,
+    Byte,
+    Int,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum Type {
+    Prim(PrimType),
+    List(PrimType, PrimType),
+}
+
+struct Element {
+    name: String,
+    count: usize,
+    properties: Vec<Property>,
+}
+
+enum Property {
+    X,
+    Y,
+    Z,
+    Indices(PrimType, PrimType),
+    Unknown(Type),
+}
+
+pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u32) {
+    let mut file = BufReader::new(File::open(path).unwrap());
+
+    let mut format = None;
+    let mut elements = vec![];
+
+    let mut line = String::new();
+    loop {
+        if line.is_empty() {
+            if file.read_line(&mut line).unwrap() == 0 {
+                break;
+            }
+        }
+
+        let mut words = line.split_whitespace();
+
+        match words.next().unwrap() {
+            "ply" | "comment" => {}
+            "end_header" => break,
+            "format" => {
+                format = Some(match words.next().unwrap() {
+                    "binary_little_endian" => {
+                        assert_eq!(
+                            words.next().unwrap(),
+                            "1.0",
+                            "only version 1.0 of binary_little_endian is supported"
+                        );
+                        Format::BinaryLe
+                    }
+                    s => panic!("Unrecognized ply format: {s}"),
+                })
+            }
+            "element" => {
+                let name = words.next().unwrap().to_owned();
+                let count = words.next().unwrap().parse().unwrap();
+                let mut properties = vec![];
+
+                loop {
+                    line.clear();
+                    if file.read_line(&mut line).unwrap() == 0 {
+                        break;
+                    }
+
+                    let mut words = line.split_whitespace();
+                    if words.next().unwrap() != "property" {
+                        break;
+                    }
+
+                    let ty = match words.next().unwrap() {
+                        "list" => Type::List(
+                            prim_type(words.next().unwrap()),
+                            prim_type(words.next().unwrap()),
+                        ),
+                        ty => Type::Prim(prim_type(ty)),
+                    };
+
+                    let prop = match (ty, words.next().unwrap()) {
+                        (Type::Prim(PrimType::Float), "x") => Property::X,
+                        (Type::Prim(PrimType::Float), "y") => Property::Y,
+                        (Type::Prim(PrimType::Float), "z") => Property::Z,
+                        (Type::List(count, elem), "vertex_indices") => {
+                            Property::Indices(count, elem)
+                        }
+                        (ty, s) => {
+                            eprintln!("Unrecognized property {ty:?} {s}");
+                            Property::Unknown(ty)
+                        }
+                    };
+
+                    properties.push(prop);
+                }
+
+                elements.push(Element {
+                    name,
+                    count,
+                    properties,
+                });
+
+                continue;
+            }
+            s => panic!("Unrecognized ply directive: {s}"),
+        }
+
+        line.clear();
+    }
+
+    let mut format: Box<dyn FormatReader> = match format.unwrap() {
+        Format::BinaryLe => Box::new(BinaryLeFormat(file)),
+    };
+
+    let mut base_vertex = None;
+    let mut base_shape = None;
+    let mut count = 0;
+
+    for element in elements {
+        match &*element.name {
+            "vertex" => {
+                let mut verts = vec![];
+                for _ in 0..element.count {
+                    let mut data = Vec3::ZERO;
+                    for prop in &element.properties {
+                        match prop {
+                            Property::X => data.x = format.read_float(),
+                            Property::Y => data.y = format.read_float(),
+                            Property::Z => data.z = format.read_float(),
+                            _ => format.skip(prop.ty()),
+                        }
+                    }
+                    verts.push(transform.transform_point3(data.as_dvec3()).as_vec3());
+                }
+                base_vertex = Some(scene.add_triangle_vertices(&verts));
+            }
+            "face" => {
+                let base_vertex = base_vertex.unwrap();
+                let mut tris = vec![];
+                for _ in 0..element.count {
+                    let mut tri = [0; 3];
+                    for prop in &element.properties {
+                        match prop {
+                            &Property::Indices(count_ty, elem_ty) => {
+                                let count = format.read_int(count_ty);
+                                assert_eq!(count, 3);
+                                for i in 0..count {
+                                    tri[i as usize] = base_vertex + format.read_int(elem_ty);
+                                }
+                            }
+                            _ => format.skip(prop.ty()),
+                        }
+                    }
+                    tris.push(tri);
+                }
+                base_shape = Some(scene.add_triangles(&tris));
+                count = tris.len() as u32;
+            }
+            s => {
+                eprintln!("Unrecognized ply element {s}");
+                for _ in 0..element.count {
+                    for prop in &element.properties {
+                        format.skip(prop.ty());
+                    }
+                }
+            }
+        }
+    }
+
+    (base_shape.unwrap(), count)
+}
+
+fn prim_type(name: &str) -> PrimType {
+    match name {
+        "float" => PrimType::Float,
+        "uint8" | "uchar" => PrimType::Byte,
+        "int" | "uint" => PrimType::Int,
+        _ => panic!("Unrecognized ply type: {name}"),
+    }
+}
+
+impl Property {
+    fn ty(&self) -> Type {
+        match self {
+            Property::X | Property::Y | Property::Z => Type::Prim(PrimType::Float),
+            Property::Indices(count, elem) => Type::List(*count, *elem),
+            Property::Unknown(ty) => *ty,
+        }
+    }
+}
+
+trait FormatReader {
+    fn read_float(&mut self) -> f32;
+    fn read_u8(&mut self) -> u8;
+    fn read_u32(&mut self) -> u32;
+
+    fn read_int(&mut self, ty: PrimType) -> u32 {
+        match ty {
+            PrimType::Float => self.read_float() as u32,
+            PrimType::Byte => self.read_u8() as u32,
+            PrimType::Int => self.read_u32(),
+        }
+    }
+
+    fn skip(&mut self, ty: Type) {
+        match ty {
+            Type::Prim(PrimType::Byte) => {
+                self.read_u8();
+            }
+            Type::Prim(PrimType::Int) => {
+                self.read_u32();
+            }
+            Type::Prim(PrimType::Float) => {
+                self.read_float();
+            }
+            Type::List(count_ty, elem_ty) => {
+                let count = self.read_int(count_ty);
+                for _ in 0..count {
+                    self.skip(Type::Prim(elem_ty));
+                }
+            }
+        }
+    }
+}
+
+struct BinaryLeFormat<R>(R);
+
+impl<R: BufRead> FormatReader for BinaryLeFormat<R> {
+    fn read_float(&mut self) -> f32 {
+        let mut buf = [0; 4];
+        self.0.read_exact(&mut buf).unwrap();
+        f32::from_le_bytes(buf)
+    }
+
+    fn read_u8(&mut self) -> u8 {
+        let mut buf = [0; 1];
+        self.0.read_exact(&mut buf).unwrap();
+        buf[0]
+    }
+
+    fn read_u32(&mut self) -> u32 {
+        let mut buf = [0; 4];
+        self.0.read_exact(&mut buf).unwrap();
+        u32::from_le_bytes(buf)
+    }
+}
