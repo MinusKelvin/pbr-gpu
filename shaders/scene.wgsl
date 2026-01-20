@@ -51,6 +51,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
 
     var ray = ray_;
     var inv_ray_dir = 1 / ray.d;
+    var mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
 
     var bvh_stack: array<NodeId, 64>;
     var i = 0;
@@ -65,6 +66,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
         if bvh_stack[i].id == POP_TRANSFORM_SENTINEL {
             ray = transform_stack[transform_i].old_ray;
             inv_ray_dir = 1 / ray.d;
+            mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
             transform_i -= 1;
             i -= 1;
             continue;
@@ -83,8 +85,14 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 if t_enter >= closest.t || t_enter > t_exit {
                     i -= 1;
                 } else if (node.far_node.id & NODE_TAG_MASK) == NODE_TAG_BVH {
-                    bvh_stack[i] = NodeId(bvh_stack[i].id + 1);
-                    bvh_stack[i + 1] = node.far_node;
+                    let left = NodeId(bvh_stack[i].id + 1);
+                    if (mask & node.flags) == 0 {
+                        bvh_stack[i] = node.far_node;
+                        bvh_stack[i + 1] = left;
+                    } else {
+                        bvh_stack[i] = left;
+                        bvh_stack[i + 1] = node.far_node;
+                    }
                     i += 1;
                 } else {
                     bvh_stack[i] = node.far_node;

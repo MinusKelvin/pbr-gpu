@@ -155,22 +155,22 @@ fn main() -> anyhow::Result<()> {
         mapped_at_creation: false,
     });
 
-    let mut encoder = device.create_command_encoder(&Default::default());
+    for i in 0u32..options.samples {
+        let mut encoder = device.create_command_encoder(&Default::default());
 
-    {
-        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: None,
-            timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-                query_set: &query_set,
-                beginning_of_pass_write_index: Some(0),
-                end_of_pass_write_index: Some(1),
-            }),
-        });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: None,
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set: &query_set,
+                    beginning_of_pass_write_index: Some(0),
+                    end_of_pass_write_index: Some(1),
+                }),
+            });
 
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &scene_bg, &[]);
-        pass.set_bind_group(1, &statics_bg, &[]);
-        for i in 0u32..options.samples {
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &scene_bg, &[]);
+            pass.set_bind_group(1, &statics_bg, &[]);
             pass.set_immediates(0, bytemuck::bytes_of(&i));
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
@@ -178,9 +178,13 @@ fn main() -> anyhow::Result<()> {
                 1,
             );
         }
+
+        encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
+
+        queue.submit([encoder.finish()]);
     }
 
-    encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
+    let mut encoder = device.create_command_encoder(&Default::default());
 
     let ns_per_tick = queue.get_timestamp_period();
     download_buffer(&device, &mut encoder, &query_buffer, move |data| {
