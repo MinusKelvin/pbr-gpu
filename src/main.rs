@@ -155,17 +155,23 @@ fn main() -> anyhow::Result<()> {
         mapped_at_creation: false,
     });
 
+    queue.submit([]);
+
     for i in 0u32..options.samples {
         let mut encoder = device.create_command_encoder(&Default::default());
 
         {
+            let begin = (i == 0).then_some(0);
+            let end = (i + 1 == options.samples).then_some(1);
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
-                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-                    query_set: &query_set,
-                    beginning_of_pass_write_index: Some(0),
-                    end_of_pass_write_index: Some(1),
-                }),
+                timestamp_writes: (begin.is_some() || end.is_some()).then_some(
+                    wgpu::ComputePassTimestampWrites {
+                        query_set: &query_set,
+                        beginning_of_pass_write_index: begin,
+                        end_of_pass_write_index: end,
+                    },
+                ),
             });
 
             pass.set_pipeline(&pipeline);
@@ -174,7 +180,7 @@ fn main() -> anyhow::Result<()> {
             pass.set_immediates(0, bytemuck::bytes_of(&i));
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
-                (render_options.height + 7) / 8,
+                (render_options.height + 3) / 4,
                 1,
             );
         }
@@ -183,6 +189,8 @@ fn main() -> anyhow::Result<()> {
 
         queue.submit([encoder.finish()]);
     }
+
+    std::thread::sleep(Duration::from_secs(1));
 
     let mut encoder = device.create_command_encoder(&Default::default());
 

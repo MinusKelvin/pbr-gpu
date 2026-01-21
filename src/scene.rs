@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use bytemuck::{NoUninit, Pod, Zeroable};
 use glam::Vec3;
+use rayon::prelude::ParallelSliceMut;
 use wgpu::util::DeviceExt;
 
 use crate::{Transform, storage_buffer_entry};
@@ -69,10 +70,9 @@ impl Scene {
         idx | SHAPE_TAG_SPHERE
     }
 
-    pub fn add_triangle_vertices(&mut self, positions: &[Vec3]) -> u32 {
+    pub fn add_triangle_vertices(&mut self, verts: &[TriVertex]) -> u32 {
         let base_index = self.triangle_vertices.len();
-        self.triangle_vertices
-            .extend(positions.iter().map(|&p| TriVertex { p, _padding: 0 }));
+        self.triangle_vertices.extend(verts);
         base_index as u32
     }
 
@@ -123,7 +123,9 @@ impl Scene {
                 .fold(objs[0].1.clone(), |acc, (_, bb)| acc.union(bb));
 
             let axis = total_bounds.size().max_position();
-            objs.sort_by_key(|(_, bb)| ordered_float::OrderedFloat(bb.centroid()[axis]));
+            objs.par_sort_unstable_by_key(|(_, bb)| {
+                ordered_float::OrderedFloat(bb.centroid()[axis])
+            });
 
             let mut costs = vec![0.0; objs.len() - 1];
 
@@ -248,7 +250,9 @@ pub struct Triangle {
 #[repr(C)]
 pub struct TriVertex {
     pub p: Vec3,
-    pub _padding: u32,
+    pub _padding0: u32,
+    pub n: Vec3,
+    pub _padding1: u32,
 }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]

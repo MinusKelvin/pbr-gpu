@@ -2,7 +2,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-use glam::{DMat4, Vec3};
+use bytemuck::Zeroable;
+use glam::{DMat3, DMat4, Vec3};
 
 use crate::scene::{Scene, TriVertex};
 
@@ -33,6 +34,9 @@ enum Property {
     X,
     Y,
     Z,
+    NormalX,
+    NormalY,
+    NormalZ,
     Indices(PrimType, PrimType),
     Unknown(Type),
 }
@@ -97,6 +101,9 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
                         (Type::Prim(PrimType::Float), "x") => Property::X,
                         (Type::Prim(PrimType::Float), "y") => Property::Y,
                         (Type::Prim(PrimType::Float), "z") => Property::Z,
+                        (Type::Prim(PrimType::Float), "nx") => Property::NormalX,
+                        (Type::Prim(PrimType::Float), "ny") => Property::NormalY,
+                        (Type::Prim(PrimType::Float), "nz") => Property::NormalZ,
                         (Type::List(count, elem), "vertex_indices") => {
                             Property::Indices(count, elem)
                         }
@@ -134,18 +141,34 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
     for element in elements {
         match &*element.name {
             "vertex" => {
+                let transform_dir = DMat3::from_mat4(transform);
+                if transform_dir.determinant() < 0.0 {
+                    eprintln!("Creating mesh with transform which swaps handedness");
+                }
+                let transform_normal = transform_dir.inverse().transpose();
                 let mut verts = vec![];
                 for _ in 0..element.count {
-                    let mut data = Vec3::ZERO;
+                    let mut data = TriVertex::zeroed();
                     for prop in &element.properties {
                         match prop {
-                            Property::X => data.x = format.read_float(),
-                            Property::Y => data.y = format.read_float(),
-                            Property::Z => data.z = format.read_float(),
+                            Property::X => data.p.x = format.read_float(),
+                            Property::Y => data.p.y = format.read_float(),
+                            Property::Z => data.p.z = format.read_float(),
+                            Property::NormalX => data.n.x = format.read_float(),
+                            Property::NormalY => data.n.y = format.read_float(),
+                            Property::NormalZ => data.n.z = format.read_float(),
                             _ => format.skip(prop.ty()),
                         }
                     }
-                    verts.push(transform.transform_point3(data.as_dvec3()).as_vec3());
+                    verts.push(TriVertex {
+                        p: transform.transform_point3(data.p.as_dvec3()).as_vec3(),
+                        _padding0: 0,
+                        n: transform_normal
+                            .mul_vec3(data.n.as_dvec3())
+                            .normalize_or_zero()
+                            .as_vec3(),
+                        _padding1: 0,
+                    });
                 }
                 base_vertex = Some(scene.add_triangle_vertices(&verts));
             }
@@ -197,7 +220,12 @@ fn prim_type(name: &str) -> PrimType {
 impl Property {
     fn ty(&self) -> Type {
         match self {
-            Property::X | Property::Y | Property::Z => Type::Prim(PrimType::Float),
+            Property::X
+            | Property::Y
+            | Property::Z
+            | Property::NormalX
+            | Property::NormalY
+            | Property::NormalZ => Type::Prim(PrimType::Float),
             Property::Indices(count, elem) => Type::List(*count, *elem),
             Property::Unknown(ty) => *ty,
         }

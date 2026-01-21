@@ -12,6 +12,7 @@ struct Triangle {
 
 struct TriVertex {
     p: vec3f,
+    n: vec3f,
 }
 
 struct TriHit {
@@ -67,9 +68,15 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         + hit.b.y * v1.p
         + hit.b.z * v2.p;
 
+    let shade_n = hit.b.x * v0.n
+        + hit.b.y * v1.n
+        + hit.b.z * v2.n;
+
     let n = normalize(cross(v1.p - v0.p, v2.p - v0.p));
 
-    return RaycastResult(true, p, n, hit.t);
+    let normal = select(shade_n, n, all(shade_n == vec3f()));
+
+    return RaycastResult(true, p, normal, hit.t);
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {

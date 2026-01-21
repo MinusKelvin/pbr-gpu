@@ -1265,6 +1265,7 @@ dependencies = [
  "lalrpop-util",
  "ordered-float",
  "pollster",
+ "rayon",
  "wgpu",
 ]
 

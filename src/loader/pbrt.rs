@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
-use glam::{DMat4, DVec3, Vec3};
+use glam::{DMat3, DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
-use crate::scene::{PrimitiveNode, Scene, Sphere};
+use crate::scene::{PrimitiveNode, Scene, Sphere, TriVertex};
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
@@ -21,7 +22,9 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
         scene: Scene::default(),
         current_prims: vec![],
     };
+    let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
+    eprintln!("Parse scene in {:.3?}", t.elapsed());
 
     let root = builder.scene.add_bvh(&builder.current_prims);
     builder.scene.root = root;
@@ -142,16 +145,40 @@ impl SceneBuilder {
     }
 
     fn triangle_mesh(&mut self, props: Props) {
+        let transform_dir = DMat3::from_mat4(self.state.transform);
+        if transform_dir.determinant() < 0.0 {
+            eprintln!("Creating mesh with transform which swaps handedness");
+        }
+
         let indices = props
             .get_uint_list("indices")
             .unwrap_or_else(|| vec![0, 1, 2]);
+
         let positions = props.get_vec3_list("P").unwrap();
         let positions: Vec<_> = positions
             .into_iter()
             .map(|p| self.state.transform.transform_point3(p).as_vec3())
             .collect();
 
-        let base_index = self.scene.add_triangle_vertices(&positions);
+        let transform_normal = transform_dir.inverse().transpose();
+        let normals = props.get_vec3_list("N").unwrap_or(vec![]);
+        let normals: Vec<_> = normals
+            .into_iter()
+            .map(|p| transform_normal.mul_vec3(p).normalize_or_zero().as_vec3())
+            .collect();
+
+        let verts: Vec<_> = positions
+            .into_iter()
+            .zip(normals.into_iter().chain(std::iter::repeat(Vec3::ZERO)))
+            .map(|(p, n)| TriVertex {
+                p,
+                _padding0: 0,
+                n,
+                _padding1: 0,
+            })
+            .collect();
+        let base_index = self.scene.add_triangle_vertices(&verts);
+
         let tris = indices
             .chunks_exact(3)
             .map(|is| [is[0] + base_index, is[1] + base_index, is[2] + base_index])
