@@ -84,7 +84,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 let t_enter = max(max(t_near.x, t_near.y), t_near.z);
                 let t_exit = min(min(t_far.x, t_far.y), t_far.z);
 
-                if t_enter >= closest.t || t_enter > t_exit {
+                if t_enter >= closest.t || t_enter > t_exit || t_exit <= 0 {
                     i -= 1;
                 } else if (node.far_node.id & NODE_TAG_MASK) == NODE_TAG_BVH {
                     let left = NodeId(bvh_stack[i].id + 1);
