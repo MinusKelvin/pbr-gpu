@@ -145,11 +145,18 @@ impl SceneBuilder {
             flip_normal: false as u32,
         });
 
+        let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
+
         let primitive = self.scene.add_primitive(PrimitiveNode { shape: shape_id });
+        let transformed = self.scene.add_transform(
+            Transform {
+                m: transform.inverse().as_mat4(),
+                m_inv: transform.as_mat4(),
+            },
+            primitive,
+        );
 
-        self.current_prims.push(primitive);
-
-        eprintln!("Note: Sphere shape will not be transformed");
+        self.current_prims.push(transformed);
     }
 
     fn triangle_mesh(&mut self, props: Props) {

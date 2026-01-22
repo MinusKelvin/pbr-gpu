@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use bytemuck::{NoUninit, Pod, Zeroable};
-use glam::Vec3;
+use glam::{BVec3, Vec3};
 use rayon::prelude::ParallelSliceMut;
 use wgpu::util::DeviceExt;
 
@@ -101,6 +101,16 @@ impl Scene {
         result
     }
 
+    pub fn add_transform(&mut self, transform: Transform, node: u32) -> u32 {
+        let idx = self.transform_nodes.len() as u32;
+        self.transform_nodes.push(TransformNode {
+            transform,
+            object: node,
+            _padding: [0; 3],
+        });
+        idx | NODE_TAG_TRANSFORM
+    }
+
     fn build_bvh(&mut self, objs: &mut [(u32, Bounds)]) -> u32 {
         assert!(!objs.is_empty());
 
@@ -184,6 +194,16 @@ impl Scene {
                     min: bvh.min,
                     max: bvh.max,
                 }
+            }
+            NODE_TAG_TRANSFORM => {
+                let node = &self.transform_nodes[(node & NODE_IDX_MASK) as usize];
+                let bounds = self.node_bounds(node.object);
+                Bounds::from_points(
+                    bounds
+                        .corners()
+                        .into_iter()
+                        .map(|p| node.transform.m_inv.transform_point3(p)),
+                )
             }
             _ => unreachable!(),
         }
@@ -335,5 +355,15 @@ impl Bounds {
 
     fn centroid(&self) -> Vec3 {
         (self.min + self.max) * 0.5
+    }
+
+    fn corners(&self) -> [Vec3; 8] {
+        [0, 1, 2, 3, 4, 5, 6, 7].map(|i| {
+            Vec3::select(
+                BVec3::new(i & 1 != 0, i & 2 != 0, i & 4 != 0),
+                self.max,
+                self.min,
+            )
+        })
     }
 }

@@ -1,4 +1,5 @@
 #import scene/shapes.wgsl
+#import /transform.wgsl
 
 @group(0) @binding(32)
 var<storage> BVH_ROOT: u32;
@@ -43,6 +44,7 @@ struct PrimitiveNode {
 
 struct TransformStackEntry {
     old_ray: Ray,
+    idx: u32,
 }
 
 fn scene_raycast(ray_: Ray) -> RaycastResult {
@@ -64,10 +66,10 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
 
     while i >= 0 {
         if bvh_stack[i].id == POP_TRANSFORM_SENTINEL {
+            transform_i -= 1;
             ray = transform_stack[transform_i].old_ray;
             inv_ray_dir = 1 / ray.d;
             mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
-            transform_i -= 1;
             i -= 1;
             continue;
         }
@@ -99,14 +101,33 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 }
             }
             case NODE_TAG_TRANSFORM {
-                // todo
-                i -= 1;
+                let node = TRANSFORM_NODES[bvh_stack[i].id & NODE_IDX_MASK];
+
+                transform_stack[transform_i] = TransformStackEntry(
+                    ray,
+                    bvh_stack[i].id & NODE_IDX_MASK
+                );
+                transform_i += 1;
+
+                ray = transform_ray(node.transform, ray);
+                inv_ray_dir = 1 / ray.d;
+                mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
+
+                bvh_stack[i] = NodeId(POP_TRANSFORM_SENTINEL);
+                bvh_stack[i + 1] = node.object;
+                i += 1;
             }
             case NODE_TAG_PRIMITIVE {
                 let shape = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK].shape;
                 let result = shape_raycast(shape, ray, closest.t);
                 if result.hit {
                     closest = result;
+                    for (var j = transform_i; j > 0; j--) {
+                        let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
+                        closest.p = transform_point_inv(t, closest.p);
+                        closest.n = transform_normal_inv(t, closest.n);
+                        // todo: transform tangents
+                    }
                 }
                 i -= 1;
             }
@@ -115,6 +136,10 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 return RaycastResult();
             }
         }
+    }
+
+    if (closest.hit) {
+        closest.n = normalize(closest.n);
     }
 
     return closest;
