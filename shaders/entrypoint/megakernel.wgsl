@@ -4,6 +4,7 @@
 #import /camera.wgsl
 #import /film.wgsl
 #import /filter.wgsl
+#import /integrator.wgsl
 
 struct Immediates {
     sample_number: u32
@@ -30,11 +31,7 @@ fn main(
 
     let ray = camera_sample_ray(film_position_ndc);
 
-    let result = scene_raycast(ray);
+    let radiance = integrate_ray(wavelengths, ray);
 
-    let d = f32(result.hit) * max(0.1, dot(result.n, -ray.d));
-
-    let value = d * spectrum_sample(SPECTRUM_D65_1NIT, wavelengths)
-        / film_wavelengths_pdf(wavelengths);
-    film_add_sample(id.xy, wavelengths, value);
+    film_add_sample(id.xy, wavelengths, radiance / film_wavelengths_pdf(wavelengths));
 }

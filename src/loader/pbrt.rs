@@ -63,7 +63,7 @@ impl SceneBuilder {
         let content = std::fs::read_to_string(self.base.join(path)).unwrap();
         grammar::TopLevelParser::new()
             .parse(self, &content)
-            .unwrap();
+            .unwrap_or_else(|e| panic!("In file {}: {e}", path.display()));
     }
 
     fn unrecognized(&mut self, directive: &str, _err: ErrorRecovery<usize, Token<'_>, &'_ str>) {

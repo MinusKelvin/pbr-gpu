@@ -1,9 +1,11 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
 use clap::Parser;
 use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
+use wgpu::PollType;
 use wgpu::util::DeviceExt;
 
 use crate::scene::{Scene, Sphere, TriVertex, Triangle};
@@ -58,6 +60,7 @@ fn main() -> anyhow::Result<()> {
     let flags = [
         ("sampler".to_owned(), "independent".to_owned()),
         ("camera".to_owned(), "projective".to_owned()),
+        ("integrator".to_owned(), "randomwalk".to_owned()),
     ]
     .into_iter()
     .collect();
@@ -155,7 +158,7 @@ fn main() -> anyhow::Result<()> {
         mapped_at_creation: false,
     });
 
-    queue.submit([]);
+    let mut last = queue.submit([]);
 
     for i in 0u32..options.samples {
         let mut encoder = device.create_command_encoder(&Default::default());
@@ -187,10 +190,22 @@ fn main() -> anyhow::Result<()> {
 
         encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
 
-        queue.submit([encoder.finish()]);
+        let new = queue.submit([encoder.finish()]);
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(last),
+                timeout: None,
+            })
+            .unwrap();
+        last = new;
+        print!("\r{i}         ");
+        std::io::stdout().flush().unwrap();
     }
+    println!();
 
-    std::thread::sleep(Duration::from_secs(1));
+    if std::env::var_os("MESA_VK_TRACE_PER_SUBMIT").is_some() {
+        std::thread::sleep(Duration::from_secs(1));
+    }
 
     let mut encoder = device.create_command_encoder(&Default::default());
 

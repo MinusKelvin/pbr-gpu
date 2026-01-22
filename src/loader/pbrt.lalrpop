@@ -40,14 +40,9 @@ Statement: () = {
     Ident ! => builder.unrecognized(<>),
 }
 
-Properties: Props<'input> = {
-    <p:Properties?> <k:PropName> <v:Values> => {
-        let (ty, k) = k;
-        let mut p = p.unwrap_or_default();
-        p.map.insert(k, (ty, v));
-        p
-    },
-}
+Properties: Props<'input> = (PropName Values)* => Props {
+    map: <>.into_iter().map(|((ty, k), v)| (k, (ty, v))).collect()
+};
 
 Values: Vec<Value<'input>> = {
     Value => vec![<>],

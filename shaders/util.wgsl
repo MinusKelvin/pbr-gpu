@@ -1,4 +1,5 @@
 const FLOAT_MAX = 3.40282347e38;
+const EPSILON = 1.19209290e-07;
 
 const TWO_PI = 6.28318548;
 const PI = 3.14159274;
@@ -60,7 +61,26 @@ fn sample_uniform_disk(random: vec2f) -> vec2f {
     return r * vec2f(cos(theta), sin(theta));
 }
 
+fn sample_uniform_sphere(random: vec2f) -> vec3f {
+    let z = random.x * 2 - 1;
+    let r = sqrt(1 - z*z);
+    let phi = TWO_PI * random.y;
+    return vec3(r * cos(phi), r * sin(phi), z);
+}
+
 fn difference_of_products(a1: f32, a2: f32, b1: f32, b2: f32) -> f32 {
     // todo: improve accuracy
     return a1 * a2 - b1 * b2;
+}
+
+fn any_orthonormal_frame(n: vec3f) -> mat3x3f {
+    // via "Building an orthonormal basis, revisited" (Duff et al. 2017)
+    let sign = copysign(1.0, n.z);
+    let a = -1 / (sign + n.z);
+    let b = n.x * n.y * a;
+    return mat3x3(
+        vec3(1 + sign * n.x * n.x * a, sign * b, -sign * n.x),
+        vec3(b, sign + n.y * n.y * a, -n.y),
+        n
+    );
 }
