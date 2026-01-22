@@ -25,6 +25,8 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
         render_options: RenderOptions::default(),
         scene: Scene::default(),
         current_prims: vec![],
+        objects: HashMap::new(),
+        object_state: None,
     };
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
@@ -45,6 +47,10 @@ pub struct SceneBuilder {
     scene: Scene,
 
     current_prims: Vec<u32>,
+
+    objects: HashMap<String, u32>,
+
+    object_state: Option<(String, Vec<u32>)>,
 }
 
 #[derive(Clone)]
@@ -74,6 +80,41 @@ impl SceneBuilder {
 
     fn pop(&mut self) {
         self.state = self.stack.pop().unwrap();
+    }
+
+    fn begin_object(&mut self, name: &str) {
+        assert!(self.object_state.is_none());
+        let name = name.to_owned();
+        let old_prims = std::mem::take(&mut self.current_prims);
+        self.object_state = Some((name, old_prims));
+    }
+
+    fn end_object(&mut self) {
+        let Some((name, old_prims)) = self.object_state.take() else {
+            panic!("ended object which was never started");
+        };
+        if self.current_prims.is_empty() {
+            eprintln!("Warning: Object {name} contains no primitives");
+            return;
+        }
+        let obj_bvh = self.scene.add_bvh(&self.current_prims);
+        self.current_prims = old_prims;
+        self.objects.insert(name, obj_bvh);
+    }
+
+    fn instance_object(&mut self, name: &str) {
+        let Some(&obj) = self.objects.get(name) else {
+            eprintln!("Warning: Attempt to instance object {name} which does not exist");
+            return;
+        };
+        let transformed = self.scene.add_transform(
+            Transform {
+                m: self.state.transform.inverse().as_mat4(),
+                m_inv: self.state.transform.as_mat4(),
+            },
+            obj,
+        );
+        self.current_prims.push(transformed);
     }
 
     fn identity(&mut self) {

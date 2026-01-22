@@ -15,6 +15,10 @@ Statement: () = {
     "AttributeBegin" => builder.push(),
     "AttributeEnd" => builder.pop(),
 
+    "ObjectBegin" <String> => builder.begin_object(<>),
+    "ObjectEnd" => builder.end_object(),
+    "ObjectInstance" <String> => builder.instance_object(<>),
+
     "Identity" => builder.identity(),
     "LookAt" <MaybeBracketed<(Vec3 Vec3 Vec3)>> => builder.look_at(<>),
     "Rotate" <MaybeBracketed<(Number Vec3)>> => builder.rotate(<>),
