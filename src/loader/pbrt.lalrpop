@@ -20,7 +20,8 @@ Statement: () = {
     "Rotate" <MaybeBracketed<(Number Vec3)>> => builder.rotate(<>),
     "Translate" <MaybeBracketed<Vec3>> => builder.translate(<>),
     "Scale" <MaybeBracketed<Vec3>> => builder.scale(<>),
-    "Transform" <MaybeBracketed<Mat4>> => builder.transform(<>),
+    "Transform" <MaybeBracketed<Mat4>> => builder.set_transform(<>),
+    "ConcatTransform" <MaybeBracketed<Mat4>> => builder.apply_transform(<>),
 
     "Camera" <String> <Properties> => builder.camera(<>),
 

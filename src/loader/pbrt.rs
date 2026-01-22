@@ -1,7 +1,11 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use flate2::read::GzDecoder;
 use glam::{DMat3, DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
@@ -81,7 +85,7 @@ impl SceneBuilder {
     }
 
     fn rotate(&mut self, (angle, axis): (f64, DVec3)) {
-        self.state.transform *= DMat4::from_axis_angle(axis, angle);
+        self.state.transform *= DMat4::from_axis_angle(axis, angle.to_radians());
     }
 
     fn translate(&mut self, offset: DVec3) {
@@ -92,7 +96,11 @@ impl SceneBuilder {
         self.state.transform *= DMat4::from_scale(scale);
     }
 
-    fn transform(&mut self, mat: DMat4) {
+    fn set_transform(&mut self, mat: DMat4) {
+        self.state.transform = mat;
+    }
+
+    fn apply_transform(&mut self, mat: DMat4) {
         self.state.transform *= mat;
     }
 
@@ -204,17 +212,22 @@ impl SceneBuilder {
             .expect("plymesh shape requires file name");
         let path = self.base.join(file);
 
-        if path.extension() == Some("gz".as_ref()) {
-            eprintln!("Cannot load compressed plymesh");
-            return;
-        }
-
         if props.get_string("displacement").is_some() {
             eprintln!("Note: plymesh tessellation displacement map will not be applied.");
         }
 
-        let (base_shape, count) =
-            super::ply::load_plymesh(&mut self.scene, &path, self.state.transform);
+        let (base_shape, count) = match path.extension().and_then(OsStr::to_str) {
+            Some("gz") => super::ply::load_plymesh(
+                &mut self.scene,
+                &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
+                self.state.transform,
+            ),
+            _ => super::ply::load_plymesh(
+                &mut self.scene,
+                &mut BufReader::new(File::open(path).unwrap()),
+                self.state.transform,
+            ),
+        };
 
         for i in 0..count {
             let primitive = self.scene.add_primitive(PrimitiveNode {

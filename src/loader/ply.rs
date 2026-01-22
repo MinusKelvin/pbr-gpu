@@ -1,14 +1,13 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::io::BufRead;
 
 use bytemuck::Zeroable;
-use glam::{DMat3, DMat4, Vec3};
+use glam::{DMat3, DMat4};
 
 use crate::scene::{Scene, TriVertex};
 
 enum Format {
     BinaryLe,
+    BinaryBe,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -41,16 +40,14 @@ enum Property {
     Unknown(Type),
 }
 
-pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u32) {
-    let mut file = BufReader::new(File::open(path).unwrap());
-
+pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4) -> (u32, u32) {
     let mut format = None;
     let mut elements = vec![];
 
     let mut line = String::new();
     loop {
         if line.is_empty() {
-            if file.read_line(&mut line).unwrap() == 0 {
+            if data.read_line(&mut line).unwrap() == 0 {
                 break;
             }
         }
@@ -70,6 +67,14 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
                         );
                         Format::BinaryLe
                     }
+                    "binary_big_endian" => {
+                        assert_eq!(
+                            words.next().unwrap(),
+                            "1.0",
+                            "only version 1.0 of binary_big_endian is supported"
+                        );
+                        Format::BinaryBe
+                    }
                     s => panic!("Unrecognized ply format: {s}"),
                 })
             }
@@ -80,7 +85,7 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
 
                 loop {
                     line.clear();
-                    if file.read_line(&mut line).unwrap() == 0 {
+                    if data.read_line(&mut line).unwrap() == 0 {
                         break;
                     }
 
@@ -131,7 +136,8 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
     }
 
     let mut format: Box<dyn FormatReader> = match format.unwrap() {
-        Format::BinaryLe => Box::new(BinaryLeFormat(file)),
+        Format::BinaryLe => Box::new(BinaryLeFormat(data)),
+        Format::BinaryBe => Box::new(BinaryBeFormat(data)),
     };
 
     let mut base_vertex = None;
@@ -176,20 +182,20 @@ pub fn load_plymesh(scene: &mut Scene, path: &Path, transform: DMat4) -> (u32, u
                 let base_vertex = base_vertex.unwrap();
                 let mut tris = vec![];
                 for _ in 0..element.count {
-                    let mut tri = [0; 3];
                     for prop in &element.properties {
                         match prop {
                             &Property::Indices(count_ty, elem_ty) => {
                                 let count = format.read_int(count_ty);
-                                assert_eq!(count, 3);
-                                for i in 0..count {
-                                    tri[i as usize] = base_vertex + format.read_int(elem_ty);
+                                let indices: Vec<_> = (0..count)
+                                    .map(|_| base_vertex + format.read_int(elem_ty))
+                                    .collect();
+                                for i in 2..count as usize {
+                                    tris.push([indices[0], indices[i - 1], indices[i]]);
                                 }
                             }
                             _ => format.skip(prop.ty()),
                         }
                     }
-                    tris.push(tri);
                 }
                 base_shape = Some(scene.add_triangles(&tris));
                 count = tris.len() as u32;
@@ -287,3 +293,26 @@ impl<R: BufRead> FormatReader for BinaryLeFormat<R> {
         u32::from_le_bytes(buf)
     }
 }
+
+struct BinaryBeFormat<R>(R);
+
+impl<R: BufRead> FormatReader for BinaryBeFormat<R> {
+    fn read_float(&mut self) -> f32 {
+        let mut buf = [0; 4];
+        self.0.read_exact(&mut buf).unwrap();
+        f32::from_be_bytes(buf)
+    }
+
+    fn read_u8(&mut self) -> u8 {
+        let mut buf = [0; 1];
+        self.0.read_exact(&mut buf).unwrap();
+        buf[0]
+    }
+
+    fn read_u32(&mut self) -> u32 {
+        let mut buf = [0; 4];
+        self.0.read_exact(&mut buf).unwrap();
+        u32::from_be_bytes(buf)
+    }
+}
+
