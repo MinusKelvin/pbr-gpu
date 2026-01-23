@@ -10,23 +10,33 @@ use glam::{DMat3, DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
-use crate::scene::{NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TriVertex};
+use crate::scene::{
+    MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId, TriVertex,
+};
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
 
 pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
+    let mut scene = Scene::default();
+    let error_texture = scene.add_constant_float_texture(0.5);
+    let error_material = scene.add_diffuse_material(error_texture);
+
     let mut builder = SceneBuilder {
         base: path.parent().unwrap().to_path_buf(),
         state: State {
             transform: DMat4::IDENTITY,
+            material: error_material,
         },
         stack: vec![],
         render_options: RenderOptions::default(),
-        scene: Scene::default(),
+        scene,
         current_prims: vec![],
         objects: HashMap::new(),
+        textures: HashMap::new(),
+        materials: HashMap::new(),
         object_state: None,
+        error_material,
     };
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
@@ -42,6 +52,7 @@ pub struct SceneBuilder {
     base: PathBuf,
     state: State,
     stack: Vec<State>,
+    error_material: MaterialId,
 
     render_options: RenderOptions,
     scene: Scene,
@@ -49,6 +60,8 @@ pub struct SceneBuilder {
     current_prims: Vec<NodeId>,
 
     objects: HashMap<String, NodeId>,
+    textures: HashMap<String, TextureId>,
+    materials: HashMap<String, MaterialId>,
 
     object_state: Option<(String, Vec<NodeId>)>,
 }
@@ -56,6 +69,7 @@ pub struct SceneBuilder {
 #[derive(Clone)]
 struct State {
     transform: DMat4,
+    material: MaterialId,
 }
 
 impl SceneBuilder {
@@ -67,7 +81,7 @@ impl SceneBuilder {
     }
 
     fn unrecognized(&mut self, directive: &str, _err: ErrorRecovery<usize, Token<'_>, &'_ str>) {
-        eprintln!("Unrecognized directive {directive}");
+        println!("Unrecognized directive {directive}");
     }
 
     fn world_begin(&mut self) {
@@ -94,7 +108,7 @@ impl SceneBuilder {
             panic!("ended object which was never started");
         };
         if self.current_prims.is_empty() {
-            eprintln!("Warning: Object {name} contains no primitives");
+            println!("Warning: Object {name} contains no primitives");
             return;
         }
         let obj_bvh = self.scene.add_bvh(&self.current_prims);
@@ -104,7 +118,7 @@ impl SceneBuilder {
 
     fn instance_object(&mut self, name: &str) {
         let Some(&obj) = self.objects.get(name) else {
-            eprintln!("Warning: Attempt to instance object {name} which does not exist");
+            println!("Warning: Attempt to instance object {name} which does not exist");
             return;
         };
         let transformed = self.scene.add_transform(
@@ -162,7 +176,7 @@ impl SceneBuilder {
                     0.01,
                 ),
             ),
-            _ => return eprintln!("Unrecognized camera type {kind}"),
+            _ => return println!("Unrecognized camera type {kind}"),
         };
 
         self.render_options.camera = ProjectiveCamera {
@@ -173,6 +187,59 @@ impl SceneBuilder {
             orthographic: ortho as u32,
             _padding: 0,
         };
+    }
+
+    fn unrecognized_texture(&mut self, ty: &str) {
+        println!("Unrecognized texture type {ty}");
+    }
+
+    fn texture_property(&mut self, props: &Props, name: &str) -> Option<TextureId> {
+        match props.type_of(name)? {
+            "texture" => self.textures.get(props.get_string(name).unwrap()).copied(),
+            "rgb" => {
+                println!("Note: rgb texture property will not be colorful");
+                Some(
+                    self.scene
+                        .add_constant_float_texture(props.get_vec3_list(name).unwrap()[0].x as f32),
+                )
+            }
+            ty => {
+                println!("Unrecognized texture property type {ty}");
+                None
+            }
+        }
+    }
+
+    fn make_material(&mut self, ty: &str, props: Props) -> MaterialId {
+        match ty {
+            "coateddiffuse" => {
+                println!("Note: coateddiffuse material will be completely diffuse");
+                self.make_material("diffuse", props)
+            }
+            "diffuse" => {
+                let texture = self
+                    .texture_property(&props, "reflectance")
+                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.5));
+                self.scene.add_diffuse_material(texture)
+            }
+            _ => {
+                println!("Unrecognized material type {ty}");
+                self.error_material
+            }
+        }
+    }
+
+    fn material(&mut self, ty: &str, props: Props) {
+        self.state.material = self.make_material(ty, props);
+    }
+
+    fn make_named_material(&mut self, name: &str, props: Props) {
+        let material = self.make_material(props.get_string("type").unwrap(), props);
+        self.materials.insert(name.to_owned(), material);
+    }
+
+    fn named_material(&mut self, name: &str) {
+        self.state.material = self.materials[name];
     }
 
     fn sphere(&mut self, props: Props) {
@@ -188,7 +255,10 @@ impl SceneBuilder {
 
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
-        let primitive = self.scene.add_primitive(PrimitiveNode { shape: shape_id });
+        let primitive = self.scene.add_primitive(PrimitiveNode {
+            shape: shape_id,
+            material: self.state.material,
+        });
         let transformed = self.scene.add_transform(
             Transform {
                 m: transform.inverse().as_mat4(),
@@ -203,7 +273,7 @@ impl SceneBuilder {
     fn triangle_mesh(&mut self, props: Props) {
         let transform_dir = DMat3::from_mat4(self.state.transform);
         if transform_dir.determinant() < 0.0 {
-            eprintln!("Creating mesh with transform which swaps handedness");
+            println!("Creating mesh with transform which swaps handedness");
         }
 
         let indices = props
@@ -244,7 +314,7 @@ impl SceneBuilder {
     }
 
     fn loop_subdivision_surface(&mut self, props: Props) {
-        eprintln!("Note: loop subdivision surface will not be subdivided.");
+        println!("Note: loop subdivision surface will not be subdivided.");
         self.triangle_mesh(props);
     }
 
@@ -255,7 +325,7 @@ impl SceneBuilder {
         let path = self.base.join(file);
 
         if props.get_string("displacement").is_some() {
-            eprintln!("Note: plymesh tessellation displacement map will not be applied.");
+            println!("Note: plymesh tessellation displacement map will not be applied.");
         }
 
         match path.extension().and_then(OsStr::to_str) {
@@ -279,12 +349,16 @@ impl SceneBuilder {
     }
 
     fn unrecognized_shape(&mut self, ty: &str) {
-        eprintln!("Unrecognized shape type {ty}");
+        println!("Unrecognized shape type {ty}");
     }
 
     fn create_primitives(&mut self, shapes: impl Iterator<Item = ShapeId>) {
-        self.current_prims
-            .extend(shapes.map(|shape| self.scene.add_primitive(PrimitiveNode { shape })));
+        self.current_prims.extend(shapes.map(|shape| {
+            self.scene.add_primitive(PrimitiveNode {
+                shape,
+                material: self.state.material,
+            })
+        }));
     }
 }
 
@@ -320,7 +394,7 @@ impl<'a> Props<'a> {
     fn get_vec3_list(&self, name: &str) -> Option<Vec<DVec3>> {
         self.map
             .get(name)
-            .filter(|&&(ty, _)| ty == "point3" || ty == "vector3" || ty == "normal")
+            .filter(|&&(ty, _)| ty == "point3" || ty == "vector3" || ty == "normal" || ty == "rgb")
             .map(|(_, v)| {
                 v.chunks_exact(3)
                     .map(|vs| {

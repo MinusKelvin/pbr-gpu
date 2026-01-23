@@ -1,0 +1,50 @@
+#import /spectrum.wgsl
+
+struct TextureId {
+    id: u32
+}
+
+const TEXTURE_TAG_BITS: u32 = 2;
+const TEXTURE_TAG_SHIFT: u32 = 32 - TEXTURE_TAG_BITS;
+const TEXTURE_IDX_MASK: u32 = (1 << TEXTURE_TAG_SHIFT) - 1;
+const TEXTURE_TAG_MASK: u32 = ~TEXTURE_IDX_MASK;
+
+const TEXTURE_CONSTANT_FLOAT: u32 = 0 << TEXTURE_TAG_SHIFT;
+const TEXTURE_CONSTANT_RGB: u32 = 1 << TEXTURE_TAG_SHIFT;
+const TEXTURE_CONSTANT_SPECTRUM: u32 = 2 << TEXTURE_TAG_SHIFT;
+
+@group(0) @binding(64)
+var<storage> CONSTANT_FLOAT_TEXTURES: array<ConstantFloatTexture>;
+@group(0) @binding(65)
+var<storage> CONSTANT_RGB_TEXTURES: array<ConstantRgbTexture>;
+@group(0) @binding(66)
+var<storage> CONSTANT_SPECTRUM_TEXTURES: array<ConstantSpectrumTexture>;
+
+struct ConstantFloatTexture {
+    value: f32
+}
+
+struct ConstantRgbTexture {
+    rgb: vec3f
+}
+
+struct ConstantSpectrumTexture {
+    spectrum: SpectrumId
+}
+
+fn texture_evaluate(texture_id: TextureId, wl: Wavelengths) -> vec4f {
+    let idx = texture_id.id & TEXTURE_IDX_MASK;
+    switch texture_id.id & TEXTURE_TAG_MASK {
+        case TEXTURE_CONSTANT_FLOAT {
+            return vec4f(CONSTANT_FLOAT_TEXTURES[idx].value);
+        }
+        // case TEXTURE_CONSTANT_RGB {}
+        case TEXTURE_CONSTANT_SPECTRUM {
+            return spectrum_sample(CONSTANT_SPECTRUM_TEXTURES[idx].spectrum, wl);
+        }
+        default {
+            // unreachable
+            return vec4f();
+        }
+    }
+}

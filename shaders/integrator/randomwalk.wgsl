@@ -1,6 +1,7 @@
 #import /scene.wgsl
 #import /ray.wgsl
 #import /util.wgsl
+#import /material.wgsl
 
 const MAX_DEPTH = 250;
 
@@ -25,6 +26,8 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             break;
         }
 
+        let bsdf = material_evaluate(result.material, wl);
+
         // construct shading coordinate system
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));
 
@@ -32,7 +35,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let new_dir = sample_uniform_sphere(sample_2d());
 
         // evaluate bsdf
-        throughput *= todo_eval_bsdf(old_dir, new_dir)
+        throughput *= bsdf_f(bsdf, old_dir, new_dir)
             * abs(new_dir.z)
             / (1 / (2 * TWO_PI));
 
@@ -43,8 +46,4 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     }
 
     return radiance;
-}
-
-fn todo_eval_bsdf(old_dir: vec3f, new_dir: vec3f) -> vec4f {
-    return 0.5 * vec4f(old_dir.z * new_dir.z > 0) / PI;
 }

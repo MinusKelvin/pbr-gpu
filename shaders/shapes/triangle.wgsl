@@ -76,7 +76,7 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
 
     let normal = select(shade_n, n, all(shade_n == vec3f()));
 
-    return RaycastResult(true, p, normal, hit.t);
+    return RaycastResult(true, p, normal, hit.t, MaterialId());
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {

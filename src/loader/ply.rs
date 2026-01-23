@@ -117,7 +117,7 @@ pub fn load_plymesh<R: BufRead>(
                             Property::Indices(count, elem)
                         }
                         (ty, s) => {
-                            eprintln!("Unrecognized property {ty:?} {s}");
+                            println!("Unrecognized property {ty:?} {s}");
                             Property::Unknown(ty)
                         }
                     };
@@ -152,7 +152,7 @@ pub fn load_plymesh<R: BufRead>(
             "vertex" => {
                 let transform_dir = DMat3::from_mat4(transform);
                 if transform_dir.determinant() < 0.0 {
-                    eprintln!("Creating mesh with transform which swaps handedness");
+                    println!("Creating mesh with transform which swaps handedness");
                 }
                 let transform_normal = transform_dir.inverse().transpose();
                 for _ in 0..element.count {
@@ -197,7 +197,7 @@ pub fn load_plymesh<R: BufRead>(
                 }
             }
             s => {
-                eprintln!("Unrecognized ply element {s}");
+                println!("Unrecognized ply element {s}");
                 for _ in 0..element.count {
                     for prop in &element.properties {
                         format.skip(prop.ty());

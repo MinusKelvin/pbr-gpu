@@ -5,7 +5,7 @@ use glam::Vec3;
 use rayon::prelude::*;
 
 use crate::Transform;
-use crate::scene::{Bounds, Scene, ShapeId};
+use crate::scene::{Bounds, MaterialId, Scene, ShapeId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -67,7 +67,7 @@ impl Scene {
             nodes.iter().map(|&id| (id, self.node_bounds(id))).collect();
         let result = self.build_bvh(&mut bounded_objects);
 
-        eprintln!("Build BVH in {:.3?}", t.elapsed());
+        println!("Build BVH in {:.3?}", t.elapsed());
 
         result
     }
@@ -179,4 +179,5 @@ pub struct TransformNode {
 #[repr(C)]
 pub struct PrimitiveNode {
     pub shape: ShapeId,
+    pub material: MaterialId,
 }

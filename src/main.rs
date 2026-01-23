@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
 use clap::Parser;
-use glam::{Mat3, Mat4, Vec4, Vec4Swizzles};
+use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
 
@@ -21,8 +21,8 @@ struct Options {
     #[clap(short = 'H', long)]
     height: Option<u32>,
 
-    #[clap(short, long, default_value = "128")]
-    samples: u32,
+    #[clap(short, long)]
+    samples: Option<u32>,
 
     scene: PathBuf,
 }
@@ -38,6 +38,9 @@ fn main() -> anyhow::Result<()> {
     if let Some(height) = options.height {
         render_options.height = height;
     }
+    if let Some(samples) = options.samples {
+        render_options.samples = samples;
+    }
 
     let instance = wgpu::Instance::new(&Default::default());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
@@ -50,6 +53,7 @@ fn main() -> anyhow::Result<()> {
             max_immediate_size: 64,
             max_storage_buffer_binding_size: (2 << 30) - 4,
             max_buffer_size: (2 << 30) - 4,
+            max_storage_buffers_per_shader_stage: 128,
             ..wgpu::Limits::default().using_resolution(adapter.limits())
         },
         ..Default::default()
@@ -158,12 +162,12 @@ fn main() -> anyhow::Result<()> {
 
     let mut last = queue.submit([]);
 
-    for i in 0u32..options.samples {
+    for i in 0u32..render_options.samples {
         let mut encoder = device.create_command_encoder(&Default::default());
 
         {
             let begin = (i == 0).then_some(0);
-            let end = (i + 1 == options.samples).then_some(1);
+            let end = (i + 1 == render_options.samples).then_some(1);
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
                 timestamp_writes: (begin.is_some() || end.is_some()).then_some(
@@ -196,10 +200,10 @@ fn main() -> anyhow::Result<()> {
             })
             .unwrap();
         last = new;
-        print!("\r{i}         ");
-        std::io::stdout().flush().unwrap();
+        eprint!("\r{i}         ");
+        std::io::stderr().flush().unwrap();
     }
-    println!();
+    eprintln!();
 
     if std::env::var_os("MESA_VK_TRACE_PER_SUBMIT").is_some() {
         std::thread::sleep(Duration::from_secs(1));
@@ -232,6 +236,11 @@ fn main() -> anyhow::Result<()> {
             data.into_iter()
                 .map(Vec4::from_array)
                 .map(|xyza| xyz_to_srgb * xyza.xyz())
+                .map(|rgb| {
+                    let low = rgb * 12.92;
+                    let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
+                    Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)
+                })
                 .map(|rgb| (rgb * 255.0).as_u8vec3())
                 .flat_map(|rgb| rgb.to_array())
                 .collect(),

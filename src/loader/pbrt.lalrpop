@@ -37,6 +37,14 @@ Statement: () = {
         _ => builder.unrecognized_shape(ty),
     },
 
+    "Texture" <name:String> <kind:String> <ty:String> <props:Properties> => match ty {
+        _ => builder.unrecognized_texture(ty),
+    },
+
+    "Material" <String> <Properties> => builder.material(<>),
+    "MakeNamedMaterial" <String> <Properties> => builder.make_named_material(<>),
+    "NamedMaterial" <String> => builder.named_material(<>),
+
     Ident ! => builder.unrecognized(<>),
 }
 

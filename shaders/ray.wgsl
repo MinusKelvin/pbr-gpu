@@ -1,3 +1,5 @@
+#import /material.wgsl
+
 struct Ray {
     o: vec3f,
     d: vec3f,
@@ -9,4 +11,5 @@ struct RaycastResult {
     p: vec3f,
     n: vec3f,
     t: f32,
+    material: MaterialId,
 }

@@ -1,4 +1,4 @@
-#import scene/shapes.wgsl
+#import /shapes.wgsl
 #import /transform.wgsl
 
 @group(0) @binding(32)
@@ -14,9 +14,10 @@ const NODE_TAG_BITS: u32 = 2;
 const NODE_TAG_SHIFT: u32 = 32 - NODE_TAG_BITS;
 const NODE_IDX_MASK: u32 = (1 << NODE_TAG_SHIFT) - 1;
 const NODE_TAG_MASK: u32 = ~NODE_IDX_MASK;
-const NODE_TAG_BVH: u32 = 0 << NODE_TAG_SHIFT;
-const NODE_TAG_TRANSFORM: u32 = 1 << NODE_TAG_SHIFT;
-const NODE_TAG_PRIMITIVE: u32 = 2 << NODE_TAG_SHIFT;
+
+const NODE_BVH: u32 = 0 << NODE_TAG_SHIFT;
+const NODE_TRANSFORM: u32 = 1 << NODE_TAG_SHIFT;
+const NODE_PRIMITIVE: u32 = 2 << NODE_TAG_SHIFT;
 
 struct NodeId {
     id: u32,
@@ -40,6 +41,7 @@ struct TransformNode {
 
 struct PrimitiveNode {
     shape: ShapeId,
+    material: MaterialId,
 }
 
 struct TransformStackEntry {
@@ -74,8 +76,8 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
             continue;
         }
 
-        switch (bvh_stack[i].id & NODE_TAG_MASK) {
-            case NODE_TAG_BVH {
+        switch bvh_stack[i].id & NODE_TAG_MASK {
+            case NODE_BVH {
                 let node = BVH_NODES[bvh_stack[i].id];
                 let t0 = (node.min - ray.o) * inv_ray_dir;
                 let t1 = (node.max - ray.o) * inv_ray_dir;
@@ -86,7 +88,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
 
                 if t_enter >= closest.t || t_enter > t_exit || t_exit <= 0 {
                     i -= 1;
-                } else if (node.far_node.id & NODE_TAG_MASK) == NODE_TAG_BVH {
+                } else if (node.far_node.id & NODE_TAG_MASK) == NODE_BVH {
                     let left = NodeId(bvh_stack[i].id + 1);
                     if (mask & node.flags) == 0 {
                         bvh_stack[i] = node.far_node;
@@ -100,7 +102,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                     bvh_stack[i] = node.far_node;
                 }
             }
-            case NODE_TAG_TRANSFORM {
+            case NODE_TRANSFORM {
                 let node = TRANSFORM_NODES[bvh_stack[i].id & NODE_IDX_MASK];
 
                 transform_stack[transform_i] = TransformStackEntry(
@@ -117,11 +119,12 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 bvh_stack[i + 1] = node.object;
                 i += 1;
             }
-            case NODE_TAG_PRIMITIVE {
-                let shape = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK].shape;
-                let result = shape_raycast(shape, ray, closest.t);
+            case NODE_PRIMITIVE {
+                let node = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK];
+                let result = shape_raycast(node.shape, ray, closest.t);
                 if result.hit {
                     closest = result;
+                    closest.material = node.material;
                     for (var j = transform_i; j > 0; j--) {
                         let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
                         closest.p = transform_point_inv(t, closest.p);
@@ -138,7 +141,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
         }
     }
 
-    if (closest.hit) {
+    if closest.hit {
         closest.n = normalize(closest.n);
     }
 

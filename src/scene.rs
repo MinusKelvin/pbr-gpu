@@ -4,11 +4,15 @@ use wgpu::util::DeviceExt;
 
 use crate::storage_buffer_entry;
 
+mod material;
 mod node;
 mod shapes;
+mod texture;
 
+pub use self::material::*;
 pub use self::node::*;
 pub use self::shapes::*;
+pub use self::texture::*;
 
 #[derive(Default)]
 pub struct Scene {
@@ -20,6 +24,12 @@ pub struct Scene {
     pub bvh_nodes: Vec<BvhNode>,
     pub transform_nodes: Vec<TransformNode>,
     pub primitive_nodes: Vec<PrimitiveNode>,
+
+    pub constant_float_tex: Vec<ConstantFloatTexture>,
+    pub constant_rgb_tex: Vec<ConstantRgbTexture>,
+    pub constant_spectrum_tex: Vec<ConstantSpectrumTexture>,
+
+    pub diffuse_materials: Vec<DiffuseMaterial>,
 
     pub root: Option<NodeId>,
 }
@@ -35,6 +45,12 @@ impl Scene {
         let transform = make_buffer(device, &self.transform_nodes);
         let primitive = make_buffer(device, &self.primitive_nodes);
 
+        let constant_float_tex = make_buffer(device, &self.constant_float_tex);
+        let constant_rgb_tex = make_buffer(device, &self.constant_rgb_tex);
+        let constant_spectrum_tex = make_buffer(device, &self.constant_spectrum_tex);
+
+        let diffuse_materials = make_buffer(device, &self.diffuse_materials);
+
         let root = make_buffer(device, &[self.root.unwrap()]);
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -48,6 +64,10 @@ impl Scene {
                 make_entry(33, &bvh),
                 make_entry(34, &transform),
                 make_entry(35, &primitive),
+                make_entry(64, &constant_float_tex),
+                make_entry(65, &constant_rgb_tex),
+                make_entry(66, &constant_spectrum_tex),
+                make_entry(96, &diffuse_materials),
             ],
         })
     }
@@ -64,6 +84,10 @@ pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
             storage_buffer_entry(33),
             storage_buffer_entry(34),
             storage_buffer_entry(35),
+            storage_buffer_entry(64),
+            storage_buffer_entry(65),
+            storage_buffer_entry(66),
+            storage_buffer_entry(96),
         ],
     })
 }

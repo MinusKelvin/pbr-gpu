@@ -66,5 +66,11 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
     if !hit.hit {
         return RaycastResult();
     }
-    return RaycastResult(true, hit.p, select(hit.p, -hit.p, sphere.flip_normal != 0u), hit.t);
+    return RaycastResult(
+        true,
+        hit.p,
+        select(hit.p, -hit.p, sphere.flip_normal != 0u),
+        hit.t,
+        MaterialId()
+    );
 }
