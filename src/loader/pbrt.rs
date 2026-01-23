@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use flate2::read::GzDecoder;
-use glam::{DMat3, DMat4, DVec3, Vec3};
+use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
@@ -189,6 +189,42 @@ impl SceneBuilder {
         };
     }
 
+    fn image_texture(&mut self, name: &str, props: Props) {
+        let filename = props.get_string("filename").unwrap();
+        let Ok(img) = image::open(self.base.join(filename))
+            .inspect_err(|e| println!("Could not load image {filename}: {e}"))
+        else {
+            return;
+        };
+
+        if let Some(v) = props.get_string("mapping")
+            && v != "uv"
+        {
+            println!("Note: imagemap mapping {v} is not supported");
+        }
+
+        if let Some(v) = props.get_string("wrap")
+            && v != "repeat"
+        {
+            println!("Note: imagemap wrapping {v} is not supported");
+        }
+
+        if props.get_float("scale").is_some() {
+            println!("Note: imagemap scale is not supported");
+        }
+
+        if props.type_of("udelta").is_some() || props.type_of("vdelta").is_some() {
+            println!("Note: imagemap uv-deltas not supported");
+        }
+
+        if props.type_of("uscale").is_some() || props.type_of("vscale").is_some() {
+            println!("Note: imagemap uv-scale not supported");
+        }
+
+        let id = self.scene.add_image_texture(img);
+        self.textures.insert(name.to_owned(), id);
+    }
+
     fn unrecognized_texture(&mut self, ty: &str) {
         println!("Unrecognized texture type {ty}");
     }
@@ -236,7 +272,10 @@ impl SceneBuilder {
     }
 
     fn named_material(&mut self, name: &str) {
-        self.state.material = self.materials[name];
+        self.state.material = self.materials.get(name).copied().unwrap_or_else(|| {
+            println!("Material {name} does not exist?");
+            self.error_material
+        });
     }
 
     fn sphere(&mut self, props: Props) {
@@ -290,14 +329,17 @@ impl SceneBuilder {
             .map(|p| transform_normal.mul_vec3(p).normalize_or_zero().as_vec3())
             .collect();
 
+        let uvs = props.get_vec2_list("uv").unwrap_or(vec![]);
+
         let verts: Vec<_> = positions
             .into_iter()
             .zip(normals.into_iter().chain(std::iter::repeat(Vec3::ZERO)))
-            .map(|(p, n)| TriVertex {
+            .zip(uvs.into_iter().chain(std::iter::repeat(DVec2::ZERO)))
+            .map(|((p, n), uv)| TriVertex {
                 p,
-                _padding0: 0,
+                u: uv.x as f32,
                 n,
-                _padding1: 0,
+                v: uv.y as f32,
             })
             .collect();
 
@@ -401,6 +443,17 @@ impl<'a> Props<'a> {
                             vs[2].as_number().unwrap(),
                         )
                     })
+                    .collect()
+            })
+    }
+
+    fn get_vec2_list(&self, name: &str) -> Option<Vec<DVec2>> {
+        self.map
+            .get(name)
+            .filter(|&&(ty, _)| ty == "point2" || ty == "vector2")
+            .map(|(_, v)| {
+                v.chunks_exact(2)
+                    .map(|vs| DVec2::new(vs[0].as_number().unwrap(), vs[1].as_number().unwrap()))
                     .collect()
             })
     }

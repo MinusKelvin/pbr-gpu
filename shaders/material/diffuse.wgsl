@@ -6,10 +6,10 @@ struct DiffuseMaterial {
     texture: TextureId
 }
 
-fn material_diffuse_evaluate(material: DiffuseMaterial, wl: Wavelengths) -> Bsdf {
+fn material_diffuse_evaluate(material: DiffuseMaterial, uv: vec2f, wl: Wavelengths) -> Bsdf {
     var bsdf: Bsdf;
     bsdf.id = BSDF_DIFFUSE;
-    bsdf.v0 = texture_evaluate(material.texture, wl);
+    bsdf.v0 = texture_evaluate(material.texture, uv, wl);
     return bsdf;
 }
 

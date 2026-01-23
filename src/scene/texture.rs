@@ -1,5 +1,6 @@
 use bytemuck::NoUninit;
 use glam::Vec3;
+use image::DynamicImage;
 
 use crate::scene::Scene;
 
@@ -13,6 +14,7 @@ enum TextureType {
     ConstantFloat = 0 << TextureId::TAG_SHIFT,
     ConstantRgb = 1 << TextureId::TAG_SHIFT,
     ConstantSpectrum = 2 << TextureId::TAG_SHIFT,
+    ImageRgb = 3 << TextureId::TAG_SHIFT,
 }
 
 impl TextureId {
@@ -62,6 +64,15 @@ impl Scene {
             .push(ConstantSpectrumTexture { spectrum });
         id
     }
+
+    pub fn add_image_texture(&mut self, mut img: DynamicImage) -> TextureId {
+        let id = TextureId::new(TextureType::ImageRgb, self.image_rgb_tex.len());
+        let image = self.images.len() as u32;
+        image::imageops::flip_vertical_in_place(&mut img);
+        self.images.push(img);
+        self.image_rgb_tex.push(ImageRgbTexture { image });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -81,4 +92,10 @@ pub struct ConstantRgbTexture {
 #[repr(C)]
 pub struct ConstantSpectrumTexture {
     pub spectrum: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ImageRgbTexture {
+    pub image: u32,
 }

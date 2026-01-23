@@ -24,11 +24,11 @@ struct Bsdf {
 
 const BSDF_DIFFUSE: u32 = 1;
 
-fn material_evaluate(material: MaterialId, wl: Wavelengths) -> Bsdf {
+fn material_evaluate(material: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
         case MATERIAL_DIFFUSE {
-            return material_diffuse_evaluate(DIFFUSE_MATERIALS[idx], wl);
+            return material_diffuse_evaluate(DIFFUSE_MATERIALS[idx], uv, wl);
         }
         default {
             return Bsdf();

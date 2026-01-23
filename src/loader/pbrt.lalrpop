@@ -38,6 +38,7 @@ Statement: () = {
     },
 
     "Texture" <name:String> <kind:String> <ty:String> <props:Properties> => match ty {
+        "imagemap" => builder.image_texture(name, props),
         _ => builder.unrecognized_texture(ty),
     },
 

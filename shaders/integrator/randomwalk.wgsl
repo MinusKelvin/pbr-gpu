@@ -26,7 +26,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             break;
         }
 
-        let bsdf = material_evaluate(result.material, wl);
+        let bsdf = material_evaluate(result.material, result.uv, wl);
 
         // construct shading coordinate system
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));

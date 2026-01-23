@@ -1,5 +1,8 @@
+use std::num::NonZero;
+
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
+use image::DynamicImage;
 use wgpu::util::DeviceExt;
 
 use crate::storage_buffer_entry;
@@ -28,6 +31,9 @@ pub struct Scene {
     pub constant_float_tex: Vec<ConstantFloatTexture>,
     pub constant_rgb_tex: Vec<ConstantRgbTexture>,
     pub constant_spectrum_tex: Vec<ConstantSpectrumTexture>,
+    pub image_rgb_tex: Vec<ImageRgbTexture>,
+
+    pub images: Vec<image::DynamicImage>,
 
     pub diffuse_materials: Vec<DiffuseMaterial>,
 
@@ -35,7 +41,44 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn make_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
+    pub fn make_bind_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("scene"),
+            entries: &[
+                storage_buffer_entry(0),
+                storage_buffer_entry(1),
+                storage_buffer_entry(16),
+                storage_buffer_entry(32),
+                storage_buffer_entry(33),
+                storage_buffer_entry(34),
+                storage_buffer_entry(35),
+                storage_buffer_entry(64),
+                storage_buffer_entry(65),
+                storage_buffer_entry(66),
+                storage_buffer_entry(67),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 68,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: Some(
+                        NonZero::new(self.images.len() as u32).unwrap_or(NonZero::new(1).unwrap()),
+                    ),
+                },
+                storage_buffer_entry(96),
+            ],
+        })
+    }
+
+    pub fn make_bind_group(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::BindGroup {
         let spheres = make_buffer(device, &self.spheres);
         let triangles = make_buffer(device, &self.triangles);
 
@@ -48,14 +91,62 @@ impl Scene {
         let constant_float_tex = make_buffer(device, &self.constant_float_tex);
         let constant_rgb_tex = make_buffer(device, &self.constant_rgb_tex);
         let constant_spectrum_tex = make_buffer(device, &self.constant_spectrum_tex);
+        let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
 
         let diffuse_materials = make_buffer(device, &self.diffuse_materials);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
 
+        let empty = [DynamicImage::new(1, 1, image::ColorType::Rgba8)];
+        let images = match self.images.is_empty() {
+            true => empty.iter(),
+            false => self.images.iter(),
+        };
+
+        let views: Vec<_> = images
+            .map(|img| {
+                let mut desc = wgpu::TextureDescriptor {
+                    label: None,
+                    size: wgpu::Extent3d {
+                        width: img.width(),
+                        height: img.height(),
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                };
+
+                let mut img_rgba32f;
+                let mut img_rgba8;
+
+                let data = if img.as_flat_samples_f32().is_some() {
+                    img_rgba32f = img.to_rgba32f();
+                    desc.format = wgpu::TextureFormat::Rgba32Float;
+                    bytemuck::cast_slice(&img_rgba32f)
+                } else {
+                    img_rgba8 = img.to_rgba8();
+                    bytemuck::cast_slice(&img_rgba8)
+                };
+
+                let texture = device.create_texture_with_data(
+                    queue,
+                    &desc,
+                    wgpu::util::TextureDataOrder::LayerMajor,
+                    data,
+                );
+
+                texture.create_view(&Default::default())
+            })
+            .collect();
+        let views_refs: Vec<_> = views.iter().collect();
+
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
-            layout: &bind_group_layout(device),
+            layout,
             entries: &[
                 make_entry(0, &spheres),
                 make_entry(1, &triangles),
@@ -67,29 +158,15 @@ impl Scene {
                 make_entry(64, &constant_float_tex),
                 make_entry(65, &constant_rgb_tex),
                 make_entry(66, &constant_spectrum_tex),
+                make_entry(67, &image_rgb_tex),
+                wgpu::BindGroupEntry {
+                    binding: 68,
+                    resource: wgpu::BindingResource::TextureViewArray(&views_refs),
+                },
                 make_entry(96, &diffuse_materials),
             ],
         })
     }
-}
-
-pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
-    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("scene"),
-        entries: &[
-            storage_buffer_entry(0),
-            storage_buffer_entry(1),
-            storage_buffer_entry(16),
-            storage_buffer_entry(32),
-            storage_buffer_entry(33),
-            storage_buffer_entry(34),
-            storage_buffer_entry(35),
-            storage_buffer_entry(64),
-            storage_buffer_entry(65),
-            storage_buffer_entry(66),
-            storage_buffer_entry(96),
-        ],
-    })
 }
 
 fn make_buffer<T: NoUninit>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer {

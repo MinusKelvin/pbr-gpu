@@ -91,9 +91,9 @@ impl Sphere {
 #[repr(C)]
 pub struct TriVertex {
     pub p: Vec3,
-    pub _padding0: u32,
+    pub u: f32,
     pub n: Vec3,
-    pub _padding1: u32,
+    pub v: f32,
 }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]

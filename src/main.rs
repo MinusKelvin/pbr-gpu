@@ -48,12 +48,15 @@ fn main() -> anyhow::Result<()> {
         required_features: wgpu::Features::TIMESTAMP_QUERY
             | wgpu::Features::SHADER_INT64
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+            | wgpu::Features::TEXTURE_BINDING_ARRAY
+            | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
             | wgpu::Features::IMMEDIATES,
         required_limits: wgpu::Limits {
             max_immediate_size: 64,
             max_storage_buffer_binding_size: (2 << 30) - 4,
             max_buffer_size: (2 << 30) - 4,
             max_storage_buffers_per_shader_stage: 128,
+            max_binding_array_elements_per_shader_stage: 4096,
             ..wgpu::Limits::default().using_resolution(adapter.limits())
         },
         ..Default::default()
@@ -68,7 +71,8 @@ fn main() -> anyhow::Result<()> {
     .collect();
     let shader = shader::load_shader(&device, "entrypoint/megakernel.wgsl", &flags)?;
 
-    let scene_bg = scene.make_bind_group(&device);
+    let scene_bg_layout = scene.make_bind_group_layout(&device);
+    let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("target"),
@@ -150,7 +154,7 @@ fn main() -> anyhow::Result<()> {
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&scene::bind_group_layout(&device), &statics_bg_layout],
+        bind_group_layouts: &[&scene_bg_layout, &statics_bg_layout],
         immediate_size: 4,
     });
 

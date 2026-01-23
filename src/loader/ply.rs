@@ -36,6 +36,8 @@ enum Property {
     NormalX,
     NormalY,
     NormalZ,
+    U,
+    V,
     Indices(PrimType, PrimType),
     Unknown(Type),
 }
@@ -113,6 +115,8 @@ pub fn load_plymesh<R: BufRead>(
                         (Type::Prim(PrimType::Float), "nx") => Property::NormalX,
                         (Type::Prim(PrimType::Float), "ny") => Property::NormalY,
                         (Type::Prim(PrimType::Float), "nz") => Property::NormalZ,
+                        (Type::Prim(PrimType::Float), "u") => Property::U,
+                        (Type::Prim(PrimType::Float), "v") => Property::V,
                         (Type::List(count, elem), "vertex_indices") => {
                             Property::Indices(count, elem)
                         }
@@ -165,17 +169,19 @@ pub fn load_plymesh<R: BufRead>(
                             Property::NormalX => data.n.x = format.read_float(),
                             Property::NormalY => data.n.y = format.read_float(),
                             Property::NormalZ => data.n.z = format.read_float(),
+                            Property::U => data.u = format.read_float(),
+                            Property::V => data.v = format.read_float(),
                             _ => format.skip(prop.ty()),
                         }
                     }
                     vertices.push(TriVertex {
                         p: transform.transform_point3(data.p.as_dvec3()).as_vec3(),
-                        _padding0: 0,
+                        u: data.u,
                         n: transform_normal
                             .mul_vec3(data.n.as_dvec3())
                             .normalize_or_zero()
                             .as_vec3(),
-                        _padding1: 0,
+                        v: data.v,
                     });
                 }
             }
@@ -227,7 +233,9 @@ impl Property {
             | Property::Z
             | Property::NormalX
             | Property::NormalY
-            | Property::NormalZ => Type::Prim(PrimType::Float),
+            | Property::NormalZ
+            | Property::U
+            | Property::V => Type::Prim(PrimType::Float),
             Property::Indices(count, elem) => Type::List(*count, *elem),
             Property::Unknown(ty) => *ty,
         }
