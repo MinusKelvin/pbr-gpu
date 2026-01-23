@@ -38,7 +38,9 @@ fn texture_evaluate(texture_id: TextureId, wl: Wavelengths) -> vec4f {
         case TEXTURE_CONSTANT_FLOAT {
             return vec4f(CONSTANT_FLOAT_TEXTURES[idx].value);
         }
-        // case TEXTURE_CONSTANT_RGB {}
+        case TEXTURE_CONSTANT_RGB {
+            return spectrum_rgb_sample(CONSTANT_RGB_TEXTURES[idx].rgb, wl);
+        }
         case TEXTURE_CONSTANT_SPECTRUM {
             return spectrum_sample(CONSTANT_SPECTRUM_TEXTURES[idx].spectrum, wl);
         }

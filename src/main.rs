@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    let spectra_buffer = spectrum::load_spectrums(&device);
+    let (spectra_buffer, rgb_coeff_texture) = spectrum::load_spectrums(&device, &queue);
 
     let statics_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -108,6 +108,16 @@ fn main() -> anyhow::Result<()> {
             },
             storage_buffer_entry(1),
             storage_buffer_entry(2),
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    multisampled: false,
+                },
+                count: None,
+            },
         ],
     });
 
@@ -128,6 +138,12 @@ fn main() -> anyhow::Result<()> {
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: spectra_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(
+                    &rgb_coeff_texture.create_view(&Default::default()),
+                ),
             },
         ],
     });

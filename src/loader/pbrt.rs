@@ -196,13 +196,10 @@ impl SceneBuilder {
     fn texture_property(&mut self, props: &Props, name: &str) -> Option<TextureId> {
         match props.type_of(name)? {
             "texture" => self.textures.get(props.get_string(name).unwrap()).copied(),
-            "rgb" => {
-                println!("Note: rgb texture property will not be colorful");
-                Some(
-                    self.scene
-                        .add_constant_float_texture(props.get_vec3_list(name).unwrap()[0].x as f32),
-                )
-            }
+            "rgb" => Some(
+                self.scene
+                    .add_constant_rgb_texture(props.get_vec3_list(name).unwrap()[0].as_vec3()),
+            ),
             ty => {
                 println!("Unrecognized texture property type {ty}");
                 None
