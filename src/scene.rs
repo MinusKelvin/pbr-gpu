@@ -1,14 +1,14 @@
-use std::time::Instant;
-
-use bytemuck::{NoUninit, Pod, Zeroable};
+use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
-use rayon::prelude::ParallelSliceMut;
 use wgpu::util::DeviceExt;
 
-pub use crate::scene::shapes::*;
-use crate::{Transform, storage_buffer_entry};
+use crate::storage_buffer_entry;
 
+mod node;
 mod shapes;
+
+pub use self::node::*;
+pub use self::shapes::*;
 
 #[derive(Default)]
 pub struct Scene {
@@ -21,16 +21,8 @@ pub struct Scene {
     pub transform_nodes: Vec<TransformNode>,
     pub primitive_nodes: Vec<PrimitiveNode>,
 
-    pub root: u32,
+    pub root: Option<NodeId>,
 }
-
-const NODE_TAG_BITS: u32 = 2;
-const NODE_TAG_SHIFT: u32 = 32 - NODE_TAG_BITS;
-const NODE_IDX_MASK: u32 = (1 << NODE_TAG_SHIFT) - 1;
-const NODE_TAG_MASK: u32 = !NODE_IDX_MASK;
-const NODE_TAG_BVH: u32 = 0 << NODE_TAG_SHIFT;
-const NODE_TAG_TRANSFORM: u32 = 1 << NODE_TAG_SHIFT;
-const NODE_TAG_PRIMITIVE: u32 = 2 << NODE_TAG_SHIFT;
 
 impl Scene {
     pub fn make_bind_group(&self, device: &wgpu::Device) -> wgpu::BindGroup {
@@ -43,7 +35,7 @@ impl Scene {
         let transform = make_buffer(device, &self.transform_nodes);
         let primitive = make_buffer(device, &self.primitive_nodes);
 
-        let root = make_buffer(device, &self.root.to_le_bytes());
+        let root = make_buffer(device, &[self.root.unwrap()]);
 
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene"),
@@ -58,122 +50,6 @@ impl Scene {
                 make_entry(35, &primitive),
             ],
         })
-    }
-
-    pub fn add_primitive(&mut self, prim: PrimitiveNode) -> u32 {
-        let idx = self.primitive_nodes.len() as u32;
-        self.primitive_nodes.push(prim);
-        idx | NODE_TAG_PRIMITIVE
-    }
-
-    pub fn add_bvh(&mut self, nodes: &[u32]) -> u32 {
-        let t = Instant::now();
-
-        let mut bounded_objects: Vec<_> =
-            nodes.iter().map(|&id| (id, self.node_bounds(id))).collect();
-        let result = self.build_bvh(&mut bounded_objects);
-
-        eprintln!("Build BVH in {:.3?}", t.elapsed());
-
-        result
-    }
-
-    pub fn add_transform(&mut self, transform: Transform, node: u32) -> u32 {
-        let idx = self.transform_nodes.len() as u32;
-        self.transform_nodes.push(TransformNode {
-            transform,
-            object: node,
-            _padding: [0; 3],
-        });
-        idx | NODE_TAG_TRANSFORM
-    }
-
-    fn build_bvh(&mut self, objs: &mut [(u32, Bounds)]) -> u32 {
-        assert!(!objs.is_empty());
-
-        let id = self.bvh_nodes.len();
-        self.bvh_nodes.push(BvhNode {
-            min: Vec3::ZERO,
-            flags: 0,
-            max: Vec3::ZERO,
-            far_node: 0,
-        });
-
-        if let &mut [(node, ref bounds)] = objs {
-            self.bvh_nodes[id].min = bounds.min;
-            self.bvh_nodes[id].max = bounds.max;
-            self.bvh_nodes[id].far_node = node;
-            self.bvh_nodes[id].flags = 0;
-        } else {
-            let total_bounds = objs
-                .iter()
-                .fold(objs[0].1.clone(), |acc, (_, bb)| acc.union(bb));
-
-            let axis = total_bounds.size().max_position();
-            objs.par_sort_unstable_by_key(|(_, bb)| {
-                ordered_float::OrderedFloat(bb.centroid()[axis])
-            });
-
-            let mut costs = vec![0.0; objs.len() - 1];
-
-            let mut bb = objs[0].1.clone();
-            for i in 1..objs.len() {
-                costs[i - 1] += i as f32 * bb.surface_area();
-                bb = bb.union(&objs[i].1);
-            }
-
-            let mut bb = objs.last().unwrap().1.clone();
-            for i in 1..objs.len() {
-                costs[objs.len() - 1 - i] += i as f32 * bb.surface_area();
-                bb = bb.union(&objs[objs.len() - 1 - i].1);
-            }
-
-            let split = 1 + costs
-                .iter()
-                .enumerate()
-                .min_by_key(|&(_, &cost)| ordered_float::OrderedFloat(cost))
-                .unwrap()
-                .0;
-
-            let (left, right) = objs.split_at_mut(split);
-
-            let left_node = self.build_bvh(left);
-            assert_eq!(id as u32 + 1, left_node & NODE_IDX_MASK);
-            let right_node = self.build_bvh(right);
-
-            self.bvh_nodes[id].min = total_bounds.min;
-            self.bvh_nodes[id].max = total_bounds.max;
-            self.bvh_nodes[id].far_node = right_node;
-            self.bvh_nodes[id].flags = 1 << axis;
-        }
-
-        id as u32 | NODE_TAG_BVH
-    }
-
-    fn node_bounds(&self, node: u32) -> Bounds {
-        match node & NODE_TAG_MASK {
-            NODE_TAG_PRIMITIVE => {
-                self.shape_bounds(self.primitive_nodes[(node & NODE_IDX_MASK) as usize].shape)
-            }
-            NODE_TAG_BVH => {
-                let bvh = &self.bvh_nodes[(node & NODE_IDX_MASK) as usize];
-                Bounds {
-                    min: bvh.min,
-                    max: bvh.max,
-                }
-            }
-            NODE_TAG_TRANSFORM => {
-                let node = &self.transform_nodes[(node & NODE_IDX_MASK) as usize];
-                let bounds = self.node_bounds(node.object);
-                Bounds::from_points(
-                    bounds
-                        .corners()
-                        .into_iter()
-                        .map(|p| node.transform.m_inv.transform_point3(p)),
-                )
-            }
-            _ => unreachable!(),
-        }
     }
 }
 
@@ -209,33 +85,6 @@ fn make_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
         binding,
         resource: buffer.as_entire_binding(),
     }
-}
-
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct BvhNode {
-    pub min: Vec3,
-    pub flags: u32,
-    pub max: Vec3,
-    pub far_node: u32,
-}
-
-const BVH_FLAG_X: u32 = 1 << 0;
-const BVH_FLAG_Y: u32 = 1 << 1;
-const BVH_FLAG_Z: u32 = 1 << 2;
-
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct TransformNode {
-    pub transform: Transform,
-    pub object: u32,
-    pub _padding: [u32; 3],
-}
-
-#[derive(Copy, Clone, Debug, NoUninit)]
-#[repr(C)]
-pub struct PrimitiveNode {
-    pub shape: ShapeId,
 }
 
 #[derive(Clone, Debug)]

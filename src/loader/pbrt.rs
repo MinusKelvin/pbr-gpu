@@ -10,7 +10,7 @@ use glam::{DMat3, DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
-use crate::scene::{PrimitiveNode, Scene, ShapeId, Sphere, TriVertex};
+use crate::scene::{NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TriVertex};
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
@@ -33,7 +33,7 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
     eprintln!("Parse scene in {:.3?}", t.elapsed());
 
     let root = builder.scene.add_bvh(&builder.current_prims);
-    builder.scene.root = root;
+    builder.scene.root = Some(root);
 
     (builder.render_options, builder.scene)
 }
@@ -46,11 +46,11 @@ pub struct SceneBuilder {
     render_options: RenderOptions,
     scene: Scene,
 
-    current_prims: Vec<u32>,
+    current_prims: Vec<NodeId>,
 
-    objects: HashMap<String, u32>,
+    objects: HashMap<String, NodeId>,
 
-    object_state: Option<(String, Vec<u32>)>,
+    object_state: Option<(String, Vec<NodeId>)>,
 }
 
 #[derive(Clone)]
