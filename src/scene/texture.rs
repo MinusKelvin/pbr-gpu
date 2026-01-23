@@ -15,10 +15,12 @@ enum TextureType {
     ConstantRgb = 1 << TextureId::TAG_SHIFT,
     ConstantSpectrum = 2 << TextureId::TAG_SHIFT,
     ImageRgb = 3 << TextureId::TAG_SHIFT,
+    Scale = 4 << TextureId::TAG_SHIFT,
+    Mix = 5 << TextureId::TAG_SHIFT,
 }
 
 impl TextureId {
-    const TAG_BITS: u32 = 2;
+    const TAG_BITS: u32 = 3;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
     const TAG_MASK: u32 = !Self::IDX_MASK;
@@ -73,6 +75,23 @@ impl Scene {
         self.image_rgb_tex.push(ImageRgbTexture { image });
         id
     }
+
+    pub fn add_scale_texture(&mut self, left: TextureId, right: TextureId) -> TextureId {
+        let id = TextureId::new(TextureType::Scale, self.scale_tex.len());
+        self.scale_tex.push(ScaleTexture { left, right });
+        id
+    }
+
+    pub fn add_mix_texture(
+        &mut self,
+        tex1: TextureId,
+        tex2: TextureId,
+        amount: TextureId,
+    ) -> TextureId {
+        let id = TextureId::new(TextureType::Mix, self.mix_tex.len());
+        self.mix_tex.push(MixTexture { tex1, tex2, amount });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -98,4 +117,19 @@ pub struct ConstantSpectrumTexture {
 #[repr(C)]
 pub struct ImageRgbTexture {
     pub image: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ScaleTexture {
+    pub left: TextureId,
+    pub right: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct MixTexture {
+    pub tex1: TextureId,
+    pub tex2: TextureId,
+    pub amount: TextureId,
 }

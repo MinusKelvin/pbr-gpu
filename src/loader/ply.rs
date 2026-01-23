@@ -117,6 +117,8 @@ pub fn load_plymesh<R: BufRead>(
                         (Type::Prim(PrimType::Float), "nz") => Property::NormalZ,
                         (Type::Prim(PrimType::Float), "u") => Property::U,
                         (Type::Prim(PrimType::Float), "v") => Property::V,
+                        (Type::Prim(PrimType::Float), "s") => Property::U,
+                        (Type::Prim(PrimType::Float), "t") => Property::V,
                         (Type::List(count, elem), "vertex_indices") => {
                             Property::Indices(count, elem)
                         }

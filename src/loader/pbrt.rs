@@ -19,8 +19,9 @@ lalrpop_mod!(grammar, "/loader/pbrt.rs");
 
 pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
     let mut scene = Scene::default();
-    let error_texture = scene.add_constant_float_texture(0.5);
-    let error_material = scene.add_diffuse_material(error_texture);
+    let error_texture = scene.add_constant_rgb_texture(Vec3::new(1.0, 0.0, 1.0));
+    let error_material = scene.add_constant_rgb_texture(Vec3::new(0.0, 0.0, 0.0));
+    let error_material = scene.add_diffuse_material(error_material);
 
     let mut builder = SceneBuilder {
         base: path.parent().unwrap().to_path_buf(),
@@ -37,6 +38,7 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
         materials: HashMap::new(),
         object_state: None,
         error_material,
+        error_texture,
     };
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
@@ -53,6 +55,7 @@ pub struct SceneBuilder {
     state: State,
     stack: Vec<State>,
     error_material: MaterialId,
+    error_texture: TextureId,
 
     render_options: RenderOptions,
     scene: Scene,
@@ -225,16 +228,55 @@ impl SceneBuilder {
         self.textures.insert(name.to_owned(), id);
     }
 
+    fn constant_texture(&mut self, name: &str, props: Props) {
+        let id = self.texture_property(&props, "value").unwrap();
+        self.textures.insert(name.to_owned(), id);
+    }
+
+    fn scale_texture(&mut self, name: &str, props: Props) {
+        let left = self
+            .texture_property(&props, "tex")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
+        let right = self
+            .texture_property(&props, "scale")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
+        let id = self.scene.add_scale_texture(left, right);
+        self.textures.insert(name.to_owned(), id);
+    }
+
+    fn mix_texture(&mut self, name: &str, props: Props) {
+        let tex1 = self
+            .texture_property(&props, "tex1")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.0));
+        let tex2 = self
+            .texture_property(&props, "tex2")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
+        let amount = self
+            .texture_property(&props, "amount")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.5));
+        let id = self.scene.add_mix_texture(tex1, tex2, amount);
+        self.textures.insert(name.to_owned(), id);
+    }
+
     fn unrecognized_texture(&mut self, ty: &str) {
         println!("Unrecognized texture type {ty}");
     }
 
     fn texture_property(&mut self, props: &Props, name: &str) -> Option<TextureId> {
         match props.type_of(name)? {
-            "texture" => self.textures.get(props.get_string(name).unwrap()).copied(),
+            "texture" => Some(
+                self.textures
+                    .get(props.get_string(name).unwrap())
+                    .copied()
+                    .unwrap_or(self.error_texture),
+            ),
             "rgb" => Some(
                 self.scene
                     .add_constant_rgb_texture(props.get_vec3_list(name).unwrap()[0].as_vec3()),
+            ),
+            "float" => Some(
+                self.scene
+                    .add_constant_float_texture(props.get_float(name).unwrap() as f32),
             ),
             ty => {
                 println!("Unrecognized texture property type {ty}");
@@ -283,6 +325,10 @@ impl SceneBuilder {
         let z_min = props.get_float("zmin").unwrap_or(-radius);
         let z_max = props.get_float("zmax").unwrap_or(radius);
 
+        if props.type_of("alpha").is_some() {
+            println!("Node: alpha is not currently supported on spheres");
+        }
+
         let shape_id = self.scene.add_sphere(Sphere {
             z_min: (z_min / radius) as f32,
             z_max: (z_max / radius) as f32,
@@ -310,6 +356,10 @@ impl SceneBuilder {
         let transform_dir = DMat3::from_mat4(self.state.transform);
         if transform_dir.determinant() < 0.0 {
             println!("Creating mesh with transform which swaps handedness");
+        }
+
+        if props.type_of("alpha").is_some() {
+            println!("Node: alpha is not currently supported on triangles");
         }
 
         let indices = props

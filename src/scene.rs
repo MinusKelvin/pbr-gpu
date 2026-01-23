@@ -32,6 +32,8 @@ pub struct Scene {
     pub constant_rgb_tex: Vec<ConstantRgbTexture>,
     pub constant_spectrum_tex: Vec<ConstantSpectrumTexture>,
     pub image_rgb_tex: Vec<ImageRgbTexture>,
+    pub scale_tex: Vec<ScaleTexture>,
+    pub mix_tex: Vec<MixTexture>,
 
     pub images: Vec<image::DynamicImage>,
 
@@ -68,6 +70,8 @@ impl Scene {
                         NonZero::new(self.images.len() as u32).unwrap_or(NonZero::new(1).unwrap()),
                     ),
                 },
+                storage_buffer_entry(69),
+                storage_buffer_entry(70),
                 storage_buffer_entry(96),
             ],
         })
@@ -92,6 +96,8 @@ impl Scene {
         let constant_rgb_tex = make_buffer(device, &self.constant_rgb_tex);
         let constant_spectrum_tex = make_buffer(device, &self.constant_spectrum_tex);
         let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
+        let scale_tex = make_buffer(device, &self.scale_tex);
+        let mix_tex = make_buffer(device, &self.mix_tex);
 
         let diffuse_materials = make_buffer(device, &self.diffuse_materials);
 
@@ -163,6 +169,8 @@ impl Scene {
                     binding: 68,
                     resource: wgpu::BindingResource::TextureViewArray(&views_refs),
                 },
+                make_entry(69, &scale_tex),
+                make_entry(70, &mix_tex),
                 make_entry(96, &diffuse_materials),
             ],
         })

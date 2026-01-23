@@ -44,3 +44,15 @@ fn spectrum_rgb_sample(rgb: vec3f, wl: Wavelengths) -> vec4f {
 
     return 0.5 + poly / (2 * sqrt(1 + poly * poly));
 }
+
+fn spectrum_rgb_illuminant_sample(rgb: vec3f, wl: Wavelengths) -> vec4f {
+    let m = max(rgb.x, max(rgb.y, rgb.z));
+    let scale = m * 2;
+    if scale == 0 {
+        return vec4f();
+    } else {
+        return spectrum_rgb_sample(rgb / scale, wl)
+            * spectrum_sample(SPECTRUM_D65_1NIT, wl)
+            * scale;
+    }
+}
