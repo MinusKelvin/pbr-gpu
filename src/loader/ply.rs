@@ -3,7 +3,7 @@ use std::io::BufRead;
 use bytemuck::Zeroable;
 use glam::{DMat3, DMat4};
 
-use crate::scene::{Scene, TriVertex};
+use crate::scene::{Scene, ShapeId, TriVertex};
 
 enum Format {
     BinaryLe,
@@ -40,7 +40,11 @@ enum Property {
     Unknown(Type),
 }
 
-pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4) -> (u32, u32) {
+pub fn load_plymesh<R: BufRead>(
+    scene: &mut Scene,
+    data: &mut R,
+    transform: DMat4,
+) -> impl Iterator<Item = ShapeId> + use<R> {
     let mut format = None;
     let mut elements = vec![];
 
@@ -140,9 +144,8 @@ pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4
         Format::BinaryBe => Box::new(BinaryBeFormat(data)),
     };
 
-    let mut base_vertex = None;
-    let mut base_shape = None;
-    let mut count = 0;
+    let mut vertices = vec![];
+    let mut indices = vec![];
 
     for element in elements {
         match &*element.name {
@@ -152,7 +155,6 @@ pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4
                     eprintln!("Creating mesh with transform which swaps handedness");
                 }
                 let transform_normal = transform_dir.inverse().transpose();
-                let mut verts = vec![];
                 for _ in 0..element.count {
                     let mut data = TriVertex::zeroed();
                     for prop in &element.properties {
@@ -166,7 +168,7 @@ pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4
                             _ => format.skip(prop.ty()),
                         }
                     }
-                    verts.push(TriVertex {
+                    vertices.push(TriVertex {
                         p: transform.transform_point3(data.p.as_dvec3()).as_vec3(),
                         _padding0: 0,
                         n: transform_normal
@@ -176,29 +178,23 @@ pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4
                         _padding1: 0,
                     });
                 }
-                base_vertex = Some(scene.add_triangle_vertices(&verts));
             }
             "face" => {
-                let base_vertex = base_vertex.unwrap();
-                let mut tris = vec![];
                 for _ in 0..element.count {
                     for prop in &element.properties {
                         match prop {
                             &Property::Indices(count_ty, elem_ty) => {
                                 let count = format.read_int(count_ty);
-                                let indices: Vec<_> = (0..count)
-                                    .map(|_| base_vertex + format.read_int(elem_ty))
-                                    .collect();
+                                let idx: Vec<_> =
+                                    (0..count).map(|_| format.read_int(elem_ty)).collect();
                                 for i in 2..count as usize {
-                                    tris.push([indices[0], indices[i - 1], indices[i]]);
+                                    indices.push([idx[0], idx[i - 1], idx[i]]);
                                 }
                             }
                             _ => format.skip(prop.ty()),
                         }
                     }
                 }
-                base_shape = Some(scene.add_triangles(&tris));
-                count = tris.len() as u32;
             }
             s => {
                 eprintln!("Unrecognized ply element {s}");
@@ -211,7 +207,7 @@ pub fn load_plymesh(scene: &mut Scene, data: &mut impl BufRead, transform: DMat4
         }
     }
 
-    (base_shape.unwrap(), count)
+    scene.add_triangles(&vertices, &indices)
 }
 
 fn prim_type(name: &str) -> PrimType {
@@ -315,4 +311,3 @@ impl<R: BufRead> FormatReader for BinaryBeFormat<R> {
         u32::from_be_bytes(buf)
     }
 }
-

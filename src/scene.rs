@@ -5,7 +5,10 @@ use glam::{BVec3, Vec3};
 use rayon::prelude::ParallelSliceMut;
 use wgpu::util::DeviceExt;
 
+pub use crate::scene::shapes::*;
 use crate::{Transform, storage_buffer_entry};
+
+mod shapes;
 
 #[derive(Default)]
 pub struct Scene {
@@ -20,13 +23,6 @@ pub struct Scene {
 
     pub root: u32,
 }
-
-const SHAPE_TAG_BITS: u32 = 1;
-const SHAPE_TAG_SHIFT: u32 = 32 - SHAPE_TAG_BITS;
-const SHAPE_IDX_MASK: u32 = (1 << SHAPE_TAG_SHIFT) - 1;
-const SHAPE_TAG_MASK: u32 = !SHAPE_IDX_MASK;
-const SHAPE_TAG_SPHERE: u32 = 0 << SHAPE_TAG_SHIFT;
-const SHAPE_TAG_TRIANGLE: u32 = 1 << SHAPE_TAG_SHIFT;
 
 const NODE_TAG_BITS: u32 = 2;
 const NODE_TAG_SHIFT: u32 = 32 - NODE_TAG_BITS;
@@ -62,25 +58,6 @@ impl Scene {
                 make_entry(35, &primitive),
             ],
         })
-    }
-
-    pub fn add_sphere(&mut self, sphere: Sphere) -> u32 {
-        let idx = self.spheres.len() as u32;
-        self.spheres.push(sphere);
-        idx | SHAPE_TAG_SPHERE
-    }
-
-    pub fn add_triangle_vertices(&mut self, verts: &[TriVertex]) -> u32 {
-        let base_index = self.triangle_vertices.len();
-        self.triangle_vertices.extend(verts);
-        base_index as u32
-    }
-
-    pub fn add_triangles(&mut self, indices: &[[u32; 3]]) -> u32 {
-        let base_idx = self.triangles.len() as u32;
-        self.triangles
-            .extend(indices.iter().map(|&is| Triangle { vertices: is }));
-        base_idx | SHAPE_TAG_TRIANGLE
     }
 
     pub fn add_primitive(&mut self, prim: PrimitiveNode) -> u32 {
@@ -173,16 +150,6 @@ impl Scene {
         id as u32 | NODE_TAG_BVH
     }
 
-    fn shape_bounds(&self, shape: u32) -> Bounds {
-        match shape & SHAPE_TAG_MASK {
-            SHAPE_TAG_SPHERE => self.spheres[(shape & SHAPE_IDX_MASK) as usize].bounds(),
-            SHAPE_TAG_TRIANGLE => {
-                self.triangles[(shape & SHAPE_IDX_MASK) as usize].bounds(&self.triangle_vertices)
-            }
-            _ => unreachable!(),
-        }
-    }
-
     fn node_bounds(&self, node: u32) -> Bounds {
         match node & NODE_TAG_MASK {
             NODE_TAG_PRIMITIVE => {
@@ -225,12 +192,12 @@ pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     })
 }
 
-fn make_buffer<T: Pod>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer {
-    let zeroed = T::zeroed();
+fn make_buffer<T: NoUninit>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer {
+    let empty = vec![0; std::mem::size_of::<T>()];
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some(std::any::type_name::<T>()),
         contents: match data.is_empty() {
-            true => bytemuck::bytes_of(&zeroed),
+            true => &empty,
             false => bytemuck::cast_slice(data),
         },
         usage: wgpu::BufferUsages::STORAGE,
@@ -242,37 +209,6 @@ fn make_entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
         binding,
         resource: buffer.as_entire_binding(),
     }
-}
-
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct Sphere {
-    pub z_min: f32,
-    pub z_max: f32,
-    pub flip_normal: u32,
-}
-
-impl Sphere {
-    pub const FULL: Sphere = Sphere {
-        z_min: -1.0,
-        z_max: 1.0,
-        flip_normal: false as u32,
-    };
-}
-
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct Triangle {
-    pub vertices: [u32; 3],
-}
-
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct TriVertex {
-    pub p: Vec3,
-    pub _padding0: u32,
-    pub n: Vec3,
-    pub _padding1: u32,
 }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
@@ -296,25 +232,10 @@ pub struct TransformNode {
     pub _padding: [u32; 3],
 }
 
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+#[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct PrimitiveNode {
-    pub shape: u32,
-}
-
-impl Sphere {
-    fn bounds(&self) -> Bounds {
-        Bounds {
-            min: Vec3::new(-1.0, -1.0, self.z_min),
-            max: Vec3::new(1.0, 1.0, self.z_max),
-        }
-    }
-}
-
-impl Triangle {
-    fn bounds(&self, verts: &[TriVertex]) -> Bounds {
-        Bounds::from_points(self.vertices.iter().map(|&id| verts[id as usize].p))
-    }
+    pub shape: ShapeId,
 }
 
 #[derive(Clone, Debug)]

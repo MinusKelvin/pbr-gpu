@@ -10,7 +10,7 @@ use glam::{DMat3, DMat4, DVec3, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
-use crate::scene::{PrimitiveNode, Scene, Sphere, TriVertex};
+use crate::scene::{PrimitiveNode, Scene, ShapeId, Sphere, TriVertex};
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
@@ -233,20 +233,14 @@ impl SceneBuilder {
                 _padding1: 0,
             })
             .collect();
-        let base_index = self.scene.add_triangle_vertices(&verts);
 
         let tris = indices
             .chunks_exact(3)
-            .map(|is| [is[0] + base_index, is[1] + base_index, is[2] + base_index])
+            .map(|is| is.try_into().unwrap())
             .collect::<Vec<_>>();
-        let base_shape_id = self.scene.add_triangles(&tris);
 
-        for i in 0..tris.len() {
-            let primitive = self.scene.add_primitive(PrimitiveNode {
-                shape: base_shape_id + i as u32,
-            });
-            self.current_prims.push(primitive);
-        }
+        let iter = self.scene.add_triangles(&verts, &tris);
+        self.create_primitives(iter);
     }
 
     fn loop_subdivision_surface(&mut self, props: Props) {
@@ -264,29 +258,33 @@ impl SceneBuilder {
             eprintln!("Note: plymesh tessellation displacement map will not be applied.");
         }
 
-        let (base_shape, count) = match path.extension().and_then(OsStr::to_str) {
-            Some("gz") => super::ply::load_plymesh(
-                &mut self.scene,
-                &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
-                self.state.transform,
-            ),
-            _ => super::ply::load_plymesh(
-                &mut self.scene,
-                &mut BufReader::new(File::open(path).unwrap()),
-                self.state.transform,
-            ),
+        match path.extension().and_then(OsStr::to_str) {
+            Some("gz") => {
+                let iter = super::ply::load_plymesh(
+                    &mut self.scene,
+                    &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
+                    self.state.transform,
+                );
+                self.create_primitives(iter);
+            }
+            _ => {
+                let iter = super::ply::load_plymesh(
+                    &mut self.scene,
+                    &mut BufReader::new(File::open(path).unwrap()),
+                    self.state.transform,
+                );
+                self.create_primitives(iter);
+            }
         };
-
-        for i in 0..count {
-            let primitive = self.scene.add_primitive(PrimitiveNode {
-                shape: base_shape + i as u32,
-            });
-            self.current_prims.push(primitive);
-        }
     }
 
     fn unrecognized_shape(&mut self, ty: &str) {
         eprintln!("Unrecognized shape type {ty}");
+    }
+
+    fn create_primitives(&mut self, shapes: impl Iterator<Item = ShapeId>) {
+        self.current_prims
+            .extend(shapes.map(|shape| self.scene.add_primitive(PrimitiveNode { shape })));
     }
 }
 
