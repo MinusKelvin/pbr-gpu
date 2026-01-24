@@ -72,6 +72,7 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
         select(hit.p, -hit.p, sphere.flip_normal != 0u),
         hit.t,
         MaterialId(),
+        LightId(),
         vec2f(),
     );
 }

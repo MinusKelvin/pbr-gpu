@@ -48,6 +48,7 @@ pub struct Scene {
 
     pub uniform_lights: Vec<UniformLight>,
     pub image_lights: Vec<ImageLight>,
+    pub area_lights: Vec<AreaLight>,
 
     pub root: Option<NodeId>,
 }
@@ -88,6 +89,7 @@ impl Scene {
                 storage_buffer_entry(128),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
+                storage_buffer_entry(132),
             ],
         })
     }
@@ -122,6 +124,7 @@ impl Scene {
 
         let uniform_lights = make_buffer(device, &self.uniform_lights);
         let image_lights = make_buffer(device, &self.image_lights);
+        let area_lights = make_buffer(device, &self.area_lights);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
 
@@ -199,6 +202,7 @@ impl Scene {
                 make_entry(128, &infinite_lights),
                 make_entry(130, &uniform_lights),
                 make_entry(131, &image_lights),
+                make_entry(132, &area_lights),
             ],
         })
     }

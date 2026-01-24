@@ -5,7 +5,7 @@ use glam::Vec3;
 use rayon::prelude::*;
 
 use crate::Transform;
-use crate::scene::{Bounds, MaterialId, Scene, ShapeId};
+use crate::scene::{Bounds, LightId, MaterialId, Scene, ShapeId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -20,6 +20,8 @@ enum NodeType {
 }
 
 impl NodeId {
+    pub const ZERO: NodeId = NodeId(0);
+
     const TAG_BITS: u32 = 2;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
@@ -180,4 +182,5 @@ pub struct TransformNode {
 pub struct PrimitiveNode {
     pub shape: ShapeId,
     pub material: MaterialId,
+    pub light: LightId,
 }

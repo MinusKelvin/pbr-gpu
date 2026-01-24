@@ -11,7 +11,8 @@ use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
-    ImageLight, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId, TriVertex,
+    ImageLight, LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId,
+    TriVertex,
 };
 use crate::{ProjectiveCamera, Transform};
 
@@ -27,6 +28,7 @@ pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
         state: State {
             transform: DMat4::IDENTITY,
             material: error_material,
+            area_light: None,
         },
         stack: vec![],
         render_options: RenderOptions::default(),
@@ -72,6 +74,7 @@ pub struct SceneBuilder {
 struct State {
     transform: DMat4,
     material: MaterialId,
+    area_light: Option<Vec3>,
 }
 
 impl SceneBuilder {
@@ -355,6 +358,8 @@ impl SceneBuilder {
                 scale,
                 _padding: [0; 2],
             });
+        } else if props.type_of("L").unwrap() == "blackbody" {
+            println!("blackbody spectrum not supported");
         } else {
             let color = props.get_vec3_list("L").unwrap()[0].as_vec3();
             self.scene.add_uniform_light(color);
@@ -363,6 +368,19 @@ impl SceneBuilder {
 
     fn unrecognized_light(&mut self, ty: &str) {
         println!("Unrecognized light type {ty}");
+    }
+
+    fn diffuse_area_light(&mut self, props: Props) {
+        match props.type_of("L").unwrap() {
+            "rgb" => self.state.area_light = Some(props.get_vec3_list("L").unwrap()[0].as_vec3()),
+            ty => {
+                println!("Unknown light spectrum type {ty}")
+            }
+        }
+    }
+
+    fn unrecognized_area_light(&mut self, ty: &str) {
+        println!("Unrecognized area light type {ty}");
     }
 
     fn sphere(&mut self, props: Props) {
@@ -382,9 +400,15 @@ impl SceneBuilder {
 
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
+        let light = match self.state.area_light {
+            Some(rgb) => self.scene.add_area_light(shape_id, rgb),
+            None => LightId::ZERO,
+        };
+
         let primitive = self.scene.add_primitive(PrimitiveNode {
             shape: shape_id,
             material: self.state.material,
+            light,
         });
         let transformed = self.scene.add_transform(
             Transform {
@@ -393,6 +417,10 @@ impl SceneBuilder {
             },
             primitive,
         );
+
+        if light != LightId::ZERO {
+            self.scene.set_area_light_transform(light, transformed);
+        }
 
         self.current_prims.push(transformed);
     }
@@ -488,9 +516,14 @@ impl SceneBuilder {
 
     fn create_primitives(&mut self, shapes: impl Iterator<Item = ShapeId>) {
         self.current_prims.extend(shapes.map(|shape| {
+            let light = match self.state.area_light {
+                Some(rgb) => self.scene.add_area_light(shape, rgb),
+                None => LightId::ZERO,
+            };
             self.scene.add_primitive(PrimitiveNode {
                 shape,
                 material: self.state.material,
+                light,
             })
         }));
     }

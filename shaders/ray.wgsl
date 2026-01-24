@@ -12,5 +12,6 @@ struct RaycastResult {
     n: vec3f,
     t: f32,
     material: MaterialId,
+    light: LightId,
     uv: vec2f,
 }

@@ -1,6 +1,7 @@
 #import /spectrum.wgsl
 #import light/uniform.wgsl
 #import light/image.wgsl
+#import light/area.wgsl
 
 @group(0) @binding(128)
 var<storage> INFINITE_LIGHTS: array<LightId>;
@@ -9,18 +10,21 @@ var<storage> INFINITE_LIGHTS: array<LightId>;
 var<storage> UNIFORM_LIGHTS: array<UniformLight>;
 @group(0) @binding(131)
 var<storage> IMAGE_LIGHTS: array<ImageLight>;
+@group(0) @binding(132)
+var<storage> AREA_LIGHTS: array<AreaLight>;
 
 struct LightId {
     id: u32
 }
 
-const LIGHT_TAG_BITS: u32 = 1;
+const LIGHT_TAG_BITS: u32 = 2;
 const LIGHT_TAG_SHIFT: u32 = 32 - LIGHT_TAG_BITS;
 const LIGHT_IDX_MASK: u32 = (1 << LIGHT_TAG_SHIFT) - 1;
 const LIGHT_TAG_MASK: u32 = ~LIGHT_IDX_MASK;
 
 const LIGHT_UNIFORM: u32 = 0 << LIGHT_TAG_SHIFT;
 const LIGHT_IMAGE: u32 = 1 << LIGHT_TAG_SHIFT;
+const LIGHT_AREA: u32 = 2 << LIGHT_TAG_SHIFT;
 
 fn inf_light_emission(light: LightId, ray: Ray, wl: Wavelengths) -> vec4f {
     let idx = light.id & LIGHT_IDX_MASK;
@@ -30,6 +34,18 @@ fn inf_light_emission(light: LightId, ray: Ray, wl: Wavelengths) -> vec4f {
         }
         case LIGHT_IMAGE {
             return inf_light_image_emission(IMAGE_LIGHTS[idx], ray, wl);
+        }
+        default {
+            return vec4f();
+        }
+    }
+}
+
+fn light_emission(light: LightId, hit: RaycastResult, wl: Wavelengths) -> vec4f {
+    let idx = light.id & LIGHT_IDX_MASK;
+    switch light.id & LIGHT_TAG_MASK {
+        case LIGHT_AREA {
+            return light_area_emission(AREA_LIGHTS[idx], hit, wl);
         }
         default {
             return vec4f();

@@ -54,6 +54,10 @@ Statement: () = {
         "infinite" => builder.infinite_light(props),
         _ => builder.unrecognized_light(ty),
     },
+    "AreaLightSource" <ty:String> <props:Properties> => match ty {
+        "diffuse" => builder.diffuse_area_light(props),
+        _ => builder.unrecognized_area_light(ty),
+    },
 
     Ident ! => builder.unrecognized(<>),
 }

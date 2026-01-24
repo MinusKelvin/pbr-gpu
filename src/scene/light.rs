@@ -2,7 +2,7 @@ use bytemuck::NoUninit;
 use glam::Vec3;
 
 use crate::Transform;
-use crate::scene::Scene;
+use crate::scene::{NodeId, Scene, ShapeId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -13,10 +13,13 @@ pub struct LightId(u32);
 enum LightType {
     Uniform = 0 << LightId::TAG_SHIFT,
     Image = 1 << LightId::TAG_SHIFT,
+    Area = 2 << LightId::TAG_SHIFT,
 }
 
 impl LightId {
-    const TAG_BITS: u32 = 1;
+    pub const ZERO: LightId = LightId(0);
+
+    const TAG_BITS: u32 = 2;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
     const TAG_MASK: u32 = !Self::IDX_MASK;
@@ -54,6 +57,22 @@ impl Scene {
         self.image_lights.push(light);
         id
     }
+
+    pub fn add_area_light(&mut self, shape: ShapeId, rgb: Vec3) -> LightId {
+        let id = LightId::new(LightType::Area, self.area_lights.len());
+        self.area_lights.push(AreaLight {
+            rgb,
+            illuminant: 3,
+            transform_node: NodeId::ZERO,
+            shape,
+            _padding: [0; 2],
+        });
+        id
+    }
+
+    pub fn set_area_light_transform(&mut self, light: LightId, transform: NodeId) {
+        self.area_lights[light.idx()].transform_node = transform;
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -69,5 +88,15 @@ pub struct ImageLight {
     pub transform: Transform,
     pub image: u32,
     pub scale: f32,
+    pub _padding: [u32; 2],
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct AreaLight {
+    pub rgb: Vec3,
+    pub illuminant: u32,
+    pub transform_node: NodeId,
+    pub shape: ShapeId,
     pub _padding: [u32; 2],
 }

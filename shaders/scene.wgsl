@@ -30,10 +30,6 @@ struct BvhNode {
     far_node: NodeId,
 }
 
-const BVH_FLAG_X: u32 = 1 << 0;
-const BVH_FLAG_Y: u32 = 1 << 1;
-const BVH_FLAG_Z: u32 = 1 << 2;
-
 struct TransformNode {
     transform: Transform,
     object: NodeId,
@@ -42,6 +38,7 @@ struct TransformNode {
 struct PrimitiveNode {
     shape: ShapeId,
     material: MaterialId,
+    light: LightId,
 }
 
 struct TransformStackEntry {
@@ -125,6 +122,7 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
                 if result.hit {
                     closest = result;
                     closest.material = node.material;
+                    closest.light = node.light;
                     for (var j = transform_i; j > 0; j--) {
                         let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
                         closest.p = transform_point_inv(t, closest.p);
