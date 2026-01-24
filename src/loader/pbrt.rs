@@ -20,8 +20,7 @@ lalrpop_mod!(grammar, "/loader/pbrt.rs");
 pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
     let mut scene = Scene::default();
     let error_texture = scene.add_constant_rgb_texture(Vec3::new(1.0, 0.0, 1.0));
-    let error_material = scene.add_constant_rgb_texture(Vec3::new(0.0, 0.0, 0.0));
-    let error_material = scene.add_diffuse_material(error_material);
+    let error_material = scene.add_diffuse_material(error_texture);
 
     let mut builder = SceneBuilder {
         base: path.parent().unwrap().to_path_buf(),
@@ -258,6 +257,17 @@ impl SceneBuilder {
         self.textures.insert(name.to_owned(), id);
     }
 
+    fn checkerboard_texture(&mut self, name: &str, props: Props) {
+        let even = self
+            .texture_property(&props, "tex1")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
+        let odd = self
+            .texture_property(&props, "tex2")
+            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.0));
+        let id = self.scene.add_checkerboard_texture(even, odd);
+        self.textures.insert(name.to_owned(), id);
+    }
+
     fn unrecognized_texture(&mut self, ty: &str) {
         println!("Unrecognized texture type {ty}");
     }
@@ -296,6 +306,15 @@ impl SceneBuilder {
                     .texture_property(&props, "reflectance")
                     .unwrap_or_else(|| self.scene.add_constant_float_texture(0.5));
                 self.scene.add_diffuse_material(texture)
+            }
+            "diffusetransmission" => {
+                let reflectance = self
+                    .texture_property(&props, "reflectance")
+                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.25));
+                let transmittance = self
+                    .texture_property(&props, "transmittance")
+                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.25));
+                self.scene.add_diffuse_transmit_material(reflectance, transmittance)
             }
             _ => {
                 println!("Unrecognized material type {ty}");

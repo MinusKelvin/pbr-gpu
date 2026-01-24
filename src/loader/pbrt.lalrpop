@@ -41,6 +41,7 @@ Statement: () = {
         "constant" => builder.constant_texture(name, props),
         "scale" => builder.scale_texture(name, props),
         "mix" => builder.mix_texture(name, props),
+        "checkerboard" => builder.checkerboard_texture(name, props),
         "imagemap" => builder.image_texture(name, props),
         _ => builder.unrecognized_texture(ty),
     },

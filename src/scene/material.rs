@@ -10,6 +10,7 @@ pub struct MaterialId(u32);
 #[repr(u32)]
 enum MaterialType {
     Diffuse = 0 << MaterialId::TAG_SHIFT,
+    DiffuseTransmit = 1 << MaterialId::TAG_SHIFT,
 }
 
 impl MaterialId {
@@ -38,8 +39,21 @@ impl MaterialId {
 
 impl Scene {
     pub fn add_diffuse_material(&mut self, texture: TextureId) -> MaterialId {
-        let id = MaterialId::new(MaterialType::Diffuse, self.diffuse_materials.len());
-        self.diffuse_materials.push(DiffuseMaterial { texture });
+        let id = MaterialId::new(MaterialType::Diffuse, self.diffuse_mat.len());
+        self.diffuse_mat.push(DiffuseMaterial { texture });
+        id
+    }
+
+    pub fn add_diffuse_transmit_material(
+        &mut self,
+        reflectance: TextureId,
+        transmittance: TextureId,
+    ) -> MaterialId {
+        let id = MaterialId::new(MaterialType::DiffuseTransmit, self.diffuse_transmit_mat.len());
+        self.diffuse_transmit_mat.push(DiffuseTransmitMaterial {
+            reflectance,
+            transmittance,
+        });
         id
     }
 }
@@ -48,4 +62,11 @@ impl Scene {
 #[repr(C)]
 pub struct DiffuseMaterial {
     pub texture: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct DiffuseTransmitMaterial {
+    pub reflectance: TextureId,
+    pub transmittance: TextureId,
 }

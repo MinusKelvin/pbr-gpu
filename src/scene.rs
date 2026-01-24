@@ -34,10 +34,12 @@ pub struct Scene {
     pub image_rgb_tex: Vec<ImageRgbTexture>,
     pub scale_tex: Vec<ScaleTexture>,
     pub mix_tex: Vec<MixTexture>,
+    pub checkerboard_tex: Vec<CheckerboardTexture>,
 
     pub images: Vec<image::DynamicImage>,
 
-    pub diffuse_materials: Vec<DiffuseMaterial>,
+    pub diffuse_mat: Vec<DiffuseMaterial>,
+    pub diffuse_transmit_mat: Vec<DiffuseTransmitMaterial>,
 
     pub root: Option<NodeId>,
 }
@@ -49,7 +51,7 @@ impl Scene {
             entries: &[
                 storage_buffer_entry(0),
                 storage_buffer_entry(1),
-                storage_buffer_entry(16),
+                storage_buffer_entry(2),
                 storage_buffer_entry(32),
                 storage_buffer_entry(33),
                 storage_buffer_entry(34),
@@ -72,7 +74,9 @@ impl Scene {
                 },
                 storage_buffer_entry(69),
                 storage_buffer_entry(70),
+                storage_buffer_entry(71),
                 storage_buffer_entry(96),
+                storage_buffer_entry(97),
             ],
         })
     }
@@ -98,8 +102,10 @@ impl Scene {
         let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
         let scale_tex = make_buffer(device, &self.scale_tex);
         let mix_tex = make_buffer(device, &self.mix_tex);
+        let checkerboard_tex = make_buffer(device, &self.checkerboard_tex);
 
-        let diffuse_materials = make_buffer(device, &self.diffuse_materials);
+        let diffuse_mat = make_buffer(device, &self.diffuse_mat);
+        let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
 
@@ -156,7 +162,7 @@ impl Scene {
             entries: &[
                 make_entry(0, &spheres),
                 make_entry(1, &triangles),
-                make_entry(16, &triangle_vertices),
+                make_entry(2, &triangle_vertices),
                 make_entry(32, &root),
                 make_entry(33, &bvh),
                 make_entry(34, &transform),
@@ -171,7 +177,9 @@ impl Scene {
                 },
                 make_entry(69, &scale_tex),
                 make_entry(70, &mix_tex),
-                make_entry(96, &diffuse_materials),
+                make_entry(71, &checkerboard_tex),
+                make_entry(96, &diffuse_mat),
+                make_entry(97, &diffuse_transmit_mat),
             ],
         })
     }

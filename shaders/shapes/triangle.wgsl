@@ -1,7 +1,7 @@
 #import /util.wgsl
 #import /ray.wgsl
 
-@group(0) @binding(16)
+@group(0) @binding(2)
 var<storage> TRI_VERTICES: array<TriVertex>;
 
 struct Triangle {

@@ -17,6 +17,7 @@ enum TextureType {
     ImageRgb = 3 << TextureId::TAG_SHIFT,
     Scale = 4 << TextureId::TAG_SHIFT,
     Mix = 5 << TextureId::TAG_SHIFT,
+    Checkerboard = 6 << TextureId::TAG_SHIFT,
 }
 
 impl TextureId {
@@ -92,6 +93,13 @@ impl Scene {
         self.mix_tex.push(MixTexture { tex1, tex2, amount });
         id
     }
+
+    pub fn add_checkerboard_texture(&mut self, even: TextureId, odd: TextureId) -> TextureId {
+        let id = TextureId::new(TextureType::Checkerboard, self.checkerboard_tex.len());
+        self.checkerboard_tex
+            .push(CheckerboardTexture { even, odd });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -132,4 +140,11 @@ pub struct MixTexture {
     pub tex1: TextureId,
     pub tex2: TextureId,
     pub amount: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct CheckerboardTexture {
+    pub even: TextureId,
+    pub odd: TextureId,
 }
