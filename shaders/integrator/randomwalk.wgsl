@@ -2,8 +2,9 @@
 #import /ray.wgsl
 #import /util.wgsl
 #import /material.wgsl
+#import /light.wgsl
 
-const MAX_DEPTH = 250;
+const MAX_DEPTH = 25;
 
 fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
@@ -16,7 +17,9 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let result = scene_raycast(ray);
 
         if !result.hit {
-            radiance += throughput * spectrum_sample(SPECTRUM_D65_1NIT, wl);
+            for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+                radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
+            }
             break;
         }
 

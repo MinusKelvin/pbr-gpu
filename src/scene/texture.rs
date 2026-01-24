@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use bytemuck::NoUninit;
 use glam::Vec3;
 use image::DynamicImage;
@@ -68,11 +70,8 @@ impl Scene {
         id
     }
 
-    pub fn add_image_texture(&mut self, mut img: DynamicImage) -> TextureId {
+    pub fn add_image_texture(&mut self, image: u32) -> TextureId {
         let id = TextureId::new(TextureType::ImageRgb, self.image_rgb_tex.len());
-        let image = self.images.len() as u32;
-        image::imageops::flip_vertical_in_place(&mut img);
-        self.images.push(img);
         self.image_rgb_tex.push(ImageRgbTexture { image });
         id
     }

@@ -1,4 +1,5 @@
 use std::num::NonZero;
+use std::path::Path;
 
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
@@ -7,11 +8,13 @@ use wgpu::util::DeviceExt;
 
 use crate::storage_buffer_entry;
 
+mod light;
 mod material;
 mod node;
 mod shapes;
 mod texture;
 
+pub use self::light::*;
 pub use self::material::*;
 pub use self::node::*;
 pub use self::shapes::*;
@@ -40,6 +43,11 @@ pub struct Scene {
 
     pub diffuse_mat: Vec<DiffuseMaterial>,
     pub diffuse_transmit_mat: Vec<DiffuseTransmitMaterial>,
+
+    pub infinite_lights: Vec<LightId>,
+
+    pub uniform_lights: Vec<UniformLight>,
+    pub image_lights: Vec<ImageLight>,
 
     pub root: Option<NodeId>,
 }
@@ -77,6 +85,9 @@ impl Scene {
                 storage_buffer_entry(71),
                 storage_buffer_entry(96),
                 storage_buffer_entry(97),
+                storage_buffer_entry(128),
+                storage_buffer_entry(130),
+                storage_buffer_entry(131),
             ],
         })
     }
@@ -106,6 +117,11 @@ impl Scene {
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
+
+        let infinite_lights = make_buffer(device, &self.infinite_lights);
+
+        let uniform_lights = make_buffer(device, &self.uniform_lights);
+        let image_lights = make_buffer(device, &self.image_lights);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
 
@@ -180,8 +196,22 @@ impl Scene {
                 make_entry(71, &checkerboard_tex),
                 make_entry(96, &diffuse_mat),
                 make_entry(97, &diffuse_transmit_mat),
+                make_entry(128, &infinite_lights),
+                make_entry(130, &uniform_lights),
+                make_entry(131, &image_lights),
             ],
         })
+    }
+
+    pub fn add_image(&mut self, path: &Path) -> Option<u32> {
+        let Ok(img) = image::open(path)
+            .inspect_err(|e| println!("Could not load image {}: {e}", path.display()))
+        else {
+            return None;
+        };
+        let id = self.images.len() as u32;
+        self.images.push(img);
+        Some(id)
     }
 }
 

@@ -11,7 +11,7 @@ use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
-    MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId, TriVertex,
+    ImageLight, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId, TriVertex,
 };
 use crate::{ProjectiveCamera, Transform};
 
@@ -193,11 +193,6 @@ impl SceneBuilder {
 
     fn image_texture(&mut self, name: &str, props: Props) {
         let filename = props.get_string("filename").unwrap();
-        let Ok(img) = image::open(self.base.join(filename))
-            .inspect_err(|e| println!("Could not load image {filename}: {e}"))
-        else {
-            return;
-        };
 
         if let Some(v) = props.get_string("mapping")
             && v != "uv"
@@ -222,6 +217,10 @@ impl SceneBuilder {
         if props.type_of("uscale").is_some() || props.type_of("vscale").is_some() {
             println!("Note: imagemap uv-scale not supported");
         }
+
+        let Some(img) = self.scene.add_image(&self.base.join(filename)) else {
+            return;
+        };
 
         let id = self.scene.add_image_texture(img);
         self.textures.insert(name.to_owned(), id);
@@ -314,7 +313,8 @@ impl SceneBuilder {
                 let transmittance = self
                     .texture_property(&props, "transmittance")
                     .unwrap_or_else(|| self.scene.add_constant_float_texture(0.25));
-                self.scene.add_diffuse_transmit_material(reflectance, transmittance)
+                self.scene
+                    .add_diffuse_transmit_material(reflectance, transmittance)
             }
             _ => {
                 println!("Unrecognized material type {ty}");
@@ -337,6 +337,32 @@ impl SceneBuilder {
             println!("Material {name} does not exist?");
             self.error_material
         });
+    }
+
+    fn infinite_light(&mut self, props: Props) {
+        if let Some(filename) = props.get_string("filename") {
+            let scale = props.get_float("scale").unwrap_or(1.0) as f32;
+
+            let Some(image) = self.scene.add_image(&self.base.join(filename)) else {
+                return;
+            };
+            self.scene.add_image_light(ImageLight {
+                transform: Transform {
+                    m: self.state.transform.as_mat4(),
+                    m_inv: self.state.transform.inverse().as_mat4(),
+                },
+                image,
+                scale,
+                _padding: [0; 2],
+            });
+        } else {
+            let color = props.get_vec3_list("L").unwrap()[0].as_vec3();
+            self.scene.add_uniform_light(color);
+        }
+    }
+
+    fn unrecognized_light(&mut self, ty: &str) {
+        println!("Unrecognized light type {ty}");
     }
 
     fn sphere(&mut self, props: Props) {

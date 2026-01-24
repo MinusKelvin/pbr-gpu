@@ -95,8 +95,10 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                 }
                 case TEXTURE_IMAGE_RGB {
                     let tex = IMAGE_RGB_TEXTURES[idx].image_index;
-                    let texel = vec2u(fract(uv) * vec2f(textureDimensions(IMAGES[tex])));
-                    let rgb = textureLoad(IMAGES[tex], texel, 0).xyz;
+                    let mapped = fract(uv);
+                    let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
+                        * vec2f(textureDimensions(IMAGES[tex]));
+                    let rgb = textureLoad(IMAGES[tex], vec2u(texel), 0).xyz;
                     data[data_i] = spectrum_rgb_sample(rgb, wl);
                     data_i++;
                 }

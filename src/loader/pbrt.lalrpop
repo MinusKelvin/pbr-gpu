@@ -50,6 +50,11 @@ Statement: () = {
     "MakeNamedMaterial" <String> <Properties> => builder.make_named_material(<>),
     "NamedMaterial" <String> => builder.named_material(<>),
 
+    "LightSource" <ty:String> <props:Properties> => match ty {
+        "infinite" => builder.infinite_light(props),
+        _ => builder.unrecognized_light(ty),
+    },
+
     Ident ! => builder.unrecognized(<>),
 }
 

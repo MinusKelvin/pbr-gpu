@@ -84,3 +84,25 @@ fn any_orthonormal_frame(n: vec3f) -> mat3x3f {
         n
     );
 }
+
+fn equal_area_dir_to_square(dir: vec3f) -> vec2f {
+    let d = abs(dir);
+    let r = sqrt(1.0 - d.z);
+
+    let a = max(d.x, d.y);
+    let b = min(d.x, d.y);
+    var phi = atan2(b, a) * 2.0 / PI;
+
+    if d.x < d.y {
+        phi = 1.0 - phi;
+    }
+
+    var p = vec2(r - phi * r, phi * r);
+
+    if dir.z < 0.0 {
+        p = 1.0 - p.yx;
+    }
+
+    p *= select(sign(dir.xy), vec2(1.0), dir.xy == vec2(0.0));
+    return (p + 1.0) * 0.5;
+}
