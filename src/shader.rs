@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub fn load_shader(
     device: &wgpu::Device,
@@ -63,7 +63,8 @@ fn pre_process<'a>(
                     .next()
                     .ok_or_else(|| error(in_file, i, "expected path to import"))?;
                 let path = resolve_path(in_file, i, path)?;
-                read_shader(output, &path, flags, already_included)?;
+                read_shader(output, &path, flags, already_included)
+                    .with_context(|| error(in_file, i, "couldn't import path"))?;
             }
 
             "#importif" => {

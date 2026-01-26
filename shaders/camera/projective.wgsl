@@ -1,5 +1,5 @@
 #import /transform.wgsl
-#import /util.wgsl
+#import /util/distr.wgsl
 
 @group(1) @binding(16)
 var<storage, read> camera_data: ProjectiveCamera;

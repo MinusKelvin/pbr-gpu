@@ -1,4 +1,3 @@
-#import /util.wgsl
 #import /scene.wgsl
 #import /sampler.wgsl
 #import /camera.wgsl

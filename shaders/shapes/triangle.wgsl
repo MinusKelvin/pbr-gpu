@@ -1,4 +1,3 @@
-#import /util.wgsl
 #import /ray.wgsl
 
 @group(0) @binding(2)

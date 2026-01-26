@@ -69,15 +69,17 @@ fn bsdf_sample(bsdf: Bsdf, wi: vec3f, random: vec3f) -> BsdfSample {
         case BSDF_DIFFUSE {
             return bsdf_diffuse_sample(bsdf, wi, random);
         }
-        // case BSDF_DIFFUSE_TRANSMIT {
-        //     return bsdf_diffuse_transmit_sample(bsdf, wi, random);
-        // }
         default {
-            let dir = sample_uniform_sphere(random.xy);
+            // this is also the BSDF_DIFFUSE_TRANSMIT case
+            var dir = sample_cosine_hemisphere(random.xy);
+            let pdf = pdf_cosine_hemisphere(dir);
+            if random.z < 0.5 {
+                dir.z = -dir.z;
+            }
             return BsdfSample(
                 bsdf_f(bsdf, dir, wi),
                 dir,
-                1.0 / (2 * PI),
+                pdf / 2.0,
             );
         }
     }

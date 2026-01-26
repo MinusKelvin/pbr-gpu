@@ -1,7 +1,7 @@
 #import /spectrum.wgsl
 #import /texture.wgsl
-#import /util.wgsl
 #import /transform.wgsl
+#import /util/distr.wgsl
 
 struct ImageLight {
     transform: Transform,

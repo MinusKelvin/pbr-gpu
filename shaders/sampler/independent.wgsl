@@ -1,4 +1,4 @@
-#import /util.wgsl
+#import /util/misc.wgsl
 
 struct SamplerState {
     state: vec3u,

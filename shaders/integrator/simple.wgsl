@@ -1,6 +1,6 @@
 #import /scene.wgsl
 #import /ray.wgsl
-#import /util.wgsl
+#import /util/misc.wgsl
 #import /material.wgsl
 #import /light.wgsl
 
