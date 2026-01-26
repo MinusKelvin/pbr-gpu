@@ -28,7 +28,7 @@ const SPECTRUM_RGB_ALBEDO: u32 = 2 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_RGB_ILLUMINANT: u32 = 3 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_BLACKBODY: u32 = 4 << SPECTRUM_TAG_SHIFT;
 
-@group(1) @binding(3)
+@group(1) @binding(32)
 var RGB_TO_COEFF: texture_3d<f32>;
 
 struct SpectrumId {

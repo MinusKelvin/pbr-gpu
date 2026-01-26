@@ -1,7 +1,7 @@
 #import /transform.wgsl
 #import /util.wgsl
 
-@group(1) @binding(1)
+@group(1) @binding(16)
 var<storage, read> camera_data: ProjectiveCamera;
 
 struct ProjectiveCamera {

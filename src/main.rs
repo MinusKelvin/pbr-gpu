@@ -1,10 +1,11 @@
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
 use clap::Parser;
-use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
+use glam::{DVec4, Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
 
@@ -76,8 +77,8 @@ fn main() -> anyhow::Result<()> {
     let scene_bg_layout = scene.make_bind_group_layout(&device);
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
-    let target = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("target"),
+    let film_desc = wgpu::TextureDescriptor {
+        label: None,
         size: wgpu::Extent3d {
             width: render_options.width,
             height: render_options.height,
@@ -89,7 +90,9 @@ fn main() -> anyhow::Result<()> {
         format: wgpu::TextureFormat::Rgba32Float,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
-    });
+    };
+    let mean = device.create_texture(&film_desc);
+    let variance = device.create_texture(&film_desc);
 
     let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
@@ -130,9 +133,19 @@ fn main() -> anyhow::Result<()> {
                 },
                 count: None,
             },
-            storage_buffer_entry(1),
             wgpu::BindGroupLayoutEntry {
-                binding: 3,
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
+            },
+            storage_buffer_entry(16),
+            wgpu::BindGroupLayoutEntry {
+                binding: 32,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: false },
@@ -151,15 +164,21 @@ fn main() -> anyhow::Result<()> {
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(
-                    &target.create_view(&Default::default()),
+                    &mean.create_view(&Default::default()),
                 ),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
+                resource: wgpu::BindingResource::TextureView(
+                    &variance.create_view(&Default::default()),
+                ),
+            },
+            wgpu::BindGroupEntry {
+                binding: 16,
                 resource: camera_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 3,
+                binding: 32,
                 resource: wgpu::BindingResource::TextureView(
                     &rgb_coeff_texture.create_view(&Default::default()),
                 ),
@@ -246,48 +265,89 @@ fn main() -> anyhow::Result<()> {
 
     let mut encoder = device.create_command_encoder(&Default::default());
 
+    let downloaded = Arc::new(Mutex::new((0.0, vec![], vec![])));
+
     let ns_per_tick = queue.get_timestamp_period();
+    let dl = downloaded.clone();
     download_buffer(&device, &mut encoder, &query_buffer, move |data| {
         let data: &[u64] = bytemuck::cast_slice(&data);
 
         let ticks = data[1] - data[0];
-        println!(
-            "Took {:.3?}",
-            Duration::from_secs_f64(ticks as f64 * ns_per_tick as f64 * 1e-9)
-        );
+        dl.lock().unwrap().0 = ticks as f64 * ns_per_tick as f64 * 1e-9;
     });
 
-    download_texture(&device, &mut encoder, &target, move |data| {
-        const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
-            [0.4124, 0.3576, 0.1805],
-            [0.2126, 0.7152, 0.0722],
-            [0.0193, 0.1192, 0.9505],
-        ]);
-        let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
+    let dl = downloaded.clone();
+    download_texture(&device, &mut encoder, &mean, move |data| {
+        dl.lock().unwrap().1 = data;
+    });
 
-        image::RgbImage::from_vec(
-            render_options.width,
-            render_options.height,
-            data.into_iter()
-                .map(Vec4::from_array)
-                .map(|xyza| xyz_to_srgb * xyza.xyz())
-                .map(|rgb| {
-                    let low = rgb * 12.92;
-                    let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
-                    Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)
-                })
-                .map(|rgb| (rgb * 255.0).as_u8vec3())
-                .flat_map(|rgb| rgb.to_array())
-                .collect(),
-        )
-        .unwrap()
-        .save("img.png")
-        .unwrap();
+    let dl = downloaded.clone();
+    download_texture(&device, &mut encoder, &variance, move |data| {
+        dl.lock().unwrap().2 = data;
     });
 
     queue.submit([encoder.finish()]);
 
     device.poll(wgpu::PollType::wait_indefinitely())?;
+
+    let (time, mean, variance) = Arc::into_inner(downloaded).unwrap().into_inner().unwrap();
+
+    let mut avg_rel_var = 0.0;
+    let mut avg_rel_err = 0.0;
+    for (&mean, &s) in mean.iter().zip(&variance) {
+        let samples = mean.w;
+        let mean = mean.xyz();
+        let s = s.xyz();
+
+        let var = if samples == 1.0 {
+            Vec3::INFINITY
+        } else {
+            s / (samples - 1.0)
+        };
+
+        let rel_var = Vec3::select(mean.cmpgt(Vec3::ZERO), var / mean, Vec3::ZERO);
+        let rel_err = rel_var / samples;
+
+        avg_rel_var += rel_var.element_sum() / 3.0;
+        avg_rel_err += rel_err.element_sum() / 3.0;
+    }
+    let avg_rel_var = avg_rel_var / mean.len() as f32;
+    let avg_rel_err = avg_rel_err / mean.len() as f32;
+
+    let avg_sample_time = time as f32 / mean[0].w;
+
+    println!(
+        "Took {time:.2} seconds ({:.3?} / sample)",
+        Duration::from_secs_f32(avg_sample_time)
+    );
+    println!("Average relative variance: {avg_rel_var}");
+    println!("Average relative error: {}", avg_rel_err.sqrt());
+    println!("Efficiency: {}", 1.0 / (avg_rel_var * avg_sample_time));
+
+    const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
+        [0.4124, 0.3576, 0.1805],
+        [0.2126, 0.7152, 0.0722],
+        [0.0193, 0.1192, 0.9505],
+    ]);
+    let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
+
+    image::RgbImage::from_vec(
+        render_options.width,
+        render_options.height,
+        mean.into_iter()
+            .map(|xyza| xyz_to_srgb * xyza.xyz())
+            .map(|rgb| {
+                let low = rgb * 12.92;
+                let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
+                Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)
+            })
+            .map(|rgb| (rgb * 255.0).as_u8vec3())
+            .flat_map(|rgb| rgb.to_array())
+            .collect(),
+    )
+    .unwrap()
+    .save("img.png")
+    .unwrap();
 
     Ok(())
 }
@@ -296,7 +356,7 @@ fn download_texture(
     device: &wgpu::Device,
     encoder: &mut wgpu::CommandEncoder,
     texture: &wgpu::Texture,
-    downloaded: impl FnOnce(Vec<[f32; 4]>) + Send + 'static,
+    downloaded: impl FnOnce(Vec<Vec4>) + Send + 'static,
 ) {
     let bytes_per_row = (texture.width() * 16).next_multiple_of(256);
 
@@ -326,7 +386,7 @@ fn download_texture(
         result.unwrap();
 
         let data = buffer.get_mapped_range(..);
-        let data: &[[f32; 4]] = bytemuck::cast_slice(&data);
+        let data: &[Vec4] = bytemuck::cast_slice(&data);
         let data: Vec<_> = data
             .chunks_exact(bytes_per_row as usize / 16)
             .flat_map(|chunk| chunk[..width].iter().copied())

@@ -2,7 +2,9 @@
 #import /spectrum.wgsl
 
 @group(1) @binding(0)
-var xyz_texture: texture_storage_2d<rgba32float, read_write>;
+var mean_texture: texture_storage_2d<rgba32float, read_write>;
+@group(1) @binding(1)
+var variance_texture: texture_storage_2d<rgba32float, read_write>;
 
 fn film_wavelengths_sample() -> Wavelengths {
     let first = sample_1d();
@@ -16,18 +18,26 @@ fn film_wavelengths_pdf(wl: Wavelengths) -> vec4f {
 }
 
 fn film_size() -> vec2u {
-    return textureDimensions(xyz_texture);
+    return textureDimensions(mean_texture);
 }
 
 fn film_add_sample(px: vec2u, wl: Wavelengths, radiance: vec4f) {
-    let old = textureLoad(xyz_texture, px);
-    let mean = old.xyz;
+    let old = textureLoad(mean_texture, px);
+    var s = textureLoad(variance_texture, px).xyz;
+    var mean = old.xyz;
     let samples = old.w + 1;
-    let new_sample = vec3f(
+
+    let x = vec3f(
         dot(spectrum_sample(SPECTRUM_CIE_X, wl) * radiance, vec4f(0.25)),
         dot(spectrum_sample(SPECTRUM_CIE_Y, wl) * radiance, vec4f(0.25)),
         dot(spectrum_sample(SPECTRUM_CIE_Z, wl) * radiance, vec4f(0.25)),
     );
-    let update = (new_sample - mean) / samples;
-    textureStore(xyz_texture, px, old + vec4f(update, 1));
+
+    let delta = x - mean;
+    mean += delta / samples;
+    let delta2 = x - mean;
+    s += delta * delta2;
+
+    textureStore(mean_texture, px, vec4f(mean, samples));
+    textureStore(variance_texture, px, vec4f(s, 0));
 }

@@ -45,10 +45,16 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     };
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
-    eprintln!("Parse scene in {:.3?}", t.elapsed());
+
+    if builder.scene.infinite_lights.is_empty() {
+        let zero = builder.scene.add_constant_spectrum(0.0);
+        builder.scene.add_uniform_light(zero);
+    }
 
     let root = builder.scene.add_bvh(&builder.current_prims);
     builder.scene.root = Some(root);
+
+    eprintln!("Build scene in {:.3?}", t.elapsed());
 
     (builder.render_options, builder.scene)
 }
@@ -394,6 +400,8 @@ impl SceneBuilder {
             });
         } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
             self.scene.add_uniform_light(spectrum);
+        } else {
+            println!("Infinite light specifies neither image nor spectrum?");
         }
     }
 
