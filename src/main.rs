@@ -25,6 +25,9 @@ struct Options {
     #[clap(short, long)]
     samples: Option<u32>,
 
+    #[clap(long, default_value = "simple")]
+    integrator: String,
+
     scene: PathBuf,
 }
 
@@ -68,7 +71,7 @@ fn main() -> anyhow::Result<()> {
     let flags = [
         ("sampler".to_owned(), "independent".to_owned()),
         ("camera".to_owned(), "projective".to_owned()),
-        ("integrator".to_owned(), "randomwalk".to_owned()),
+        ("integrator".to_owned(), options.integrator),
     ]
     .into_iter()
     .collect();
