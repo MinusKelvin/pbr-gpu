@@ -30,7 +30,9 @@ struct Options {
 fn main() -> anyhow::Result<()> {
     let options = Options::parse();
 
-    let (mut render_options, scene) = loader::pbrt::load_pbrt_scene(&options.scene);
+    let spectrum_data = spectrum::load_data().unwrap();
+
+    let (mut render_options, scene) = loader::pbrt::load_pbrt_scene(&spectrum_data, &options.scene);
 
     if let Some(width) = options.width {
         render_options.width = width;
@@ -95,7 +97,25 @@ fn main() -> anyhow::Result<()> {
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    let (spectra_buffer, rgb_coeff_texture) = spectrum::load_spectrums(&device, &queue);
+    let rgb_coeff_texture = device.create_texture_with_data(
+        &queue,
+        &wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: spectrum::RGB_COEFF_N,
+                height: spectrum::RGB_COEFF_N,
+                depth_or_array_layers: spectrum::RGB_COEFF_N,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        bytemuck::cast_slice(&spectrum_data.rgb_coeffs),
+    );
 
     let statics_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -111,7 +131,6 @@ fn main() -> anyhow::Result<()> {
                 count: None,
             },
             storage_buffer_entry(1),
-            storage_buffer_entry(2),
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -138,10 +157,6 @@ fn main() -> anyhow::Result<()> {
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: camera_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: spectra_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,

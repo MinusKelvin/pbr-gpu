@@ -6,6 +6,7 @@ use glam::{BVec3, Vec3};
 use image::DynamicImage;
 use wgpu::util::DeviceExt;
 
+use crate::spectrum::SpectrumData;
 use crate::storage_buffer_entry;
 
 mod light;
@@ -13,12 +14,14 @@ mod material;
 mod node;
 mod shapes;
 mod texture;
+mod spectra;
 
 pub use self::light::*;
 pub use self::material::*;
 pub use self::node::*;
 pub use self::shapes::*;
 pub use self::texture::*;
+pub use self::spectra::*;
 
 #[derive(Default)]
 pub struct Scene {
@@ -31,9 +34,7 @@ pub struct Scene {
     pub transform_nodes: Vec<TransformNode>,
     pub primitive_nodes: Vec<PrimitiveNode>,
 
-    pub constant_float_tex: Vec<ConstantFloatTexture>,
-    pub constant_rgb_tex: Vec<ConstantRgbTexture>,
-    pub constant_spectrum_tex: Vec<ConstantSpectrumTexture>,
+    pub constant_tex: Vec<ConstantTexture>,
     pub image_rgb_tex: Vec<ImageRgbTexture>,
     pub scale_tex: Vec<ScaleTexture>,
     pub mix_tex: Vec<MixTexture>,
@@ -50,10 +51,25 @@ pub struct Scene {
     pub image_lights: Vec<ImageLight>,
     pub area_lights: Vec<AreaLight>,
 
+    pub table_spectra: Vec<TableSpectrum>,
+    pub constant_spectra: Vec<ConstantSpectrum>,
+    pub rgb_albedo_spectra: Vec<RgbAlbedoSpectrum>,
+    pub rgb_illuminant_spectra: Vec<RgbIlluminantSpectrum>,
+    pub blackbody_spectra: Vec<BlackbodySpectrum>,
+
     pub root: Option<NodeId>,
 }
 
 impl Scene {
+    pub fn new(builtin: &SpectrumData) -> Self {
+        let mut this = Scene::default();
+        this.add_table_spectrum(*builtin.cie_x);
+        this.add_table_spectrum(*builtin.cie_y);
+        this.add_table_spectrum(*builtin.cie_z);
+        this.add_table_spectrum(*builtin.d65);
+        this
+    }
+
     pub fn make_bind_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene"),
@@ -66,8 +82,6 @@ impl Scene {
                 storage_buffer_entry(34),
                 storage_buffer_entry(35),
                 storage_buffer_entry(64),
-                storage_buffer_entry(65),
-                storage_buffer_entry(66),
                 storage_buffer_entry(67),
                 wgpu::BindGroupLayoutEntry {
                     binding: 68,
@@ -90,6 +104,11 @@ impl Scene {
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
                 storage_buffer_entry(132),
+                storage_buffer_entry(160),
+                storage_buffer_entry(161),
+                storage_buffer_entry(162),
+                storage_buffer_entry(163),
+                storage_buffer_entry(164),
             ],
         })
     }
@@ -109,9 +128,7 @@ impl Scene {
         let transform = make_buffer(device, &self.transform_nodes);
         let primitive = make_buffer(device, &self.primitive_nodes);
 
-        let constant_float_tex = make_buffer(device, &self.constant_float_tex);
-        let constant_rgb_tex = make_buffer(device, &self.constant_rgb_tex);
-        let constant_spectrum_tex = make_buffer(device, &self.constant_spectrum_tex);
+        let constant_tex = make_buffer(device, &self.constant_tex);
         let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
         let scale_tex = make_buffer(device, &self.scale_tex);
         let mix_tex = make_buffer(device, &self.mix_tex);
@@ -125,6 +142,12 @@ impl Scene {
         let uniform_lights = make_buffer(device, &self.uniform_lights);
         let image_lights = make_buffer(device, &self.image_lights);
         let area_lights = make_buffer(device, &self.area_lights);
+
+        let table_spectra = make_buffer(device, &self.table_spectra);
+        let constant_spectra = make_buffer(device, &self.constant_spectra);
+        let rgb_albedo_spectra = make_buffer(device, &self.rgb_albedo_spectra);
+        let rgb_illuminant_spectra = make_buffer(device, &self.rgb_illuminant_spectra);
+        let blackbody_spectra = make_buffer(device, &self.blackbody_spectra);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
 
@@ -186,9 +209,7 @@ impl Scene {
                 make_entry(33, &bvh),
                 make_entry(34, &transform),
                 make_entry(35, &primitive),
-                make_entry(64, &constant_float_tex),
-                make_entry(65, &constant_rgb_tex),
-                make_entry(66, &constant_spectrum_tex),
+                make_entry(64, &constant_tex),
                 make_entry(67, &image_rgb_tex),
                 wgpu::BindGroupEntry {
                     binding: 68,
@@ -203,6 +224,11 @@ impl Scene {
                 make_entry(130, &uniform_lights),
                 make_entry(131, &image_lights),
                 make_entry(132, &area_lights),
+                make_entry(160, &table_spectra),
+                make_entry(161, &constant_spectra),
+                make_entry(162, &rgb_albedo_spectra),
+                make_entry(163, &rgb_illuminant_spectra),
+                make_entry(164, &blackbody_spectra),
             ],
         })
     }

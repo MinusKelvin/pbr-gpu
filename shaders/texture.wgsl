@@ -9,20 +9,14 @@ const TEXTURE_TAG_SHIFT: u32 = 32 - TEXTURE_TAG_BITS;
 const TEXTURE_IDX_MASK: u32 = (1 << TEXTURE_TAG_SHIFT) - 1;
 const TEXTURE_TAG_MASK: u32 = ~TEXTURE_IDX_MASK;
 
-const TEXTURE_CONSTANT_FLOAT: u32 = 0 << TEXTURE_TAG_SHIFT;
-const TEXTURE_CONSTANT_RGB: u32 = 1 << TEXTURE_TAG_SHIFT;
-const TEXTURE_CONSTANT_SPECTRUM: u32 = 2 << TEXTURE_TAG_SHIFT;
+const TEXTURE_CONSTANT: u32 = 0 << TEXTURE_TAG_SHIFT;
 const TEXTURE_IMAGE_RGB: u32 = 3 << TEXTURE_TAG_SHIFT;
 const TEXTURE_SCALE: u32 = 4 << TEXTURE_TAG_SHIFT;
 const TEXTURE_MIX: u32 = 5 << TEXTURE_TAG_SHIFT;
 const TEXTURE_CHECKERBOARD: u32 = 6 << TEXTURE_TAG_SHIFT;
 
 @group(0) @binding(64)
-var<storage> CONSTANT_FLOAT_TEXTURES: array<ConstantFloatTexture>;
-@group(0) @binding(65)
-var<storage> CONSTANT_RGB_TEXTURES: array<ConstantRgbTexture>;
-@group(0) @binding(66)
-var<storage> CONSTANT_SPECTRUM_TEXTURES: array<ConstantSpectrumTexture>;
+var<storage> CONSTANT_TEXTURES: array<ConstantTexture>;
 @group(0) @binding(67)
 var<storage> IMAGE_RGB_TEXTURES: array<ImageRgbTexture>;
 @group(0) @binding(68)
@@ -34,15 +28,7 @@ var<storage> MIX_TEXTURES: array<MixTexture>;
 @group(0) @binding(71)
 var<storage> CHECKERBOARD_TEXTURES: array<CheckerboardTexture>;
 
-struct ConstantFloatTexture {
-    value: f32
-}
-
-struct ConstantRgbTexture {
-    rgb: vec3f
-}
-
-struct ConstantSpectrumTexture {
+struct ConstantTexture {
     spectrum: SpectrumId
 }
 
@@ -81,16 +67,8 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
         if idx != TEXTURE_IDX_MASK {
             // pre-eval step; push data and/or required texture evaluations
             switch tag {
-                case TEXTURE_CONSTANT_FLOAT {
-                    data[data_i] = vec4f(CONSTANT_FLOAT_TEXTURES[idx].value);
-                    data_i++;
-                }
-                case TEXTURE_CONSTANT_RGB {
-                    data[data_i] = spectrum_rgb_sample(CONSTANT_RGB_TEXTURES[idx].rgb, wl);
-                    data_i++;
-                }
-                case TEXTURE_CONSTANT_SPECTRUM {
-                    data[data_i] = spectrum_sample(CONSTANT_SPECTRUM_TEXTURES[idx].spectrum, wl);
+                case TEXTURE_CONSTANT {
+                    data[data_i] = spectrum_sample(CONSTANT_TEXTURES[idx].spectrum, wl);
                     data_i++;
                 }
                 case TEXTURE_IMAGE_RGB {
@@ -99,7 +77,7 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                     let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
                         * vec2f(textureDimensions(IMAGES[tex]));
                     let rgb = textureLoad(IMAGES[tex], vec2u(texel), 0).xyz;
-                    data[data_i] = spectrum_rgb_sample(rgb, wl);
+                    data[data_i] = spectrum_rgb_albedo_sample(RgbAlbedoSpectrum(rgb), wl);
                     data_i++;
                 }
                 case TEXTURE_SCALE {
@@ -166,7 +144,7 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
     }
 
     if data_i != 1 {
-        return spectrum_rgb_sample(vec3f(1, 0, 1), wl);
+        return spectrum_rgb_albedo_sample(RgbAlbedoSpectrum(vec3f(1, 0, 1)), wl);
     }
 
     return data[0];

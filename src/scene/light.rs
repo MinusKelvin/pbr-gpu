@@ -1,8 +1,7 @@
 use bytemuck::NoUninit;
-use glam::Vec3;
 
 use crate::Transform;
-use crate::scene::{NodeId, Scene, ShapeId};
+use crate::scene::{NodeId, Scene, ShapeId, SpectrumId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -43,11 +42,10 @@ impl LightId {
 }
 
 impl Scene {
-    pub fn add_uniform_light(&mut self, rgb: Vec3) -> LightId {
+    pub fn add_uniform_light(&mut self, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Uniform, self.uniform_lights.len());
         self.infinite_lights.push(id);
-        self.uniform_lights
-            .push(UniformLight { rgb, illuminant: 3 });
+        self.uniform_lights.push(UniformLight { spectrum });
         id
     }
 
@@ -58,14 +56,12 @@ impl Scene {
         id
     }
 
-    pub fn add_area_light(&mut self, shape: ShapeId, rgb: Vec3) -> LightId {
+    pub fn add_area_light(&mut self, shape: ShapeId, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Area, self.area_lights.len());
         self.area_lights.push(AreaLight {
-            rgb,
-            illuminant: 3,
+            spectrum,
             transform_node: NodeId::ZERO,
             shape,
-            _padding: [0; 2],
         });
         id
     }
@@ -78,8 +74,7 @@ impl Scene {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct UniformLight {
-    pub rgb: Vec3,
-    pub illuminant: u32,
+    pub spectrum: SpectrumId,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -94,9 +89,7 @@ pub struct ImageLight {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct AreaLight {
-    pub rgb: Vec3,
-    pub illuminant: u32,
+    pub spectrum: SpectrumId,
     pub transform_node: NodeId,
     pub shape: ShapeId,
-    pub _padding: [u32; 2],
 }

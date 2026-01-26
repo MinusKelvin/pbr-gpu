@@ -106,3 +106,18 @@ fn equal_area_dir_to_square(dir: vec3f) -> vec2f {
     p *= select(sign(dir.xy), vec2(1.0), dir.xy == vec2(0.0));
     return (p + 1.0) * 0.5;
 }
+
+fn blackbody(lambda: f32, temperature: f32) -> f32 {
+    const C: f32 = 299792458;
+    const H: f32 = 6.62606957e-34;
+    const K_B: f32 = 1.3806488e-23;
+    // smallest lambda can be is 3.6e-7, the fifth power of which is 6e-33,
+    // which is still 5 orders of magnitude away from stressing the range of floats.
+    let l = lambda * 1e-9;
+    let l2 = l * l;
+    let l5 = l2 * l2 * l;
+    let e = H * C / (l * K_B * temperature);
+    let radiance = 2.0 * H * C * C / (l5 * (exp(e) - 1.0));
+    // Planck's law gives radiance per meter, but we use nanometers
+    return radiance * 1e-9;
+}

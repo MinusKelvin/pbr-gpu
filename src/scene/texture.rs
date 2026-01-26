@@ -1,10 +1,6 @@
-use std::path::Path;
-
 use bytemuck::NoUninit;
-use glam::Vec3;
-use image::DynamicImage;
 
-use crate::scene::Scene;
+use crate::scene::{Scene, SpectrumId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -13,9 +9,7 @@ pub struct TextureId(u32);
 #[derive(Copy, Clone, Debug)]
 #[repr(u32)]
 enum TextureType {
-    ConstantFloat = 0 << TextureId::TAG_SHIFT,
-    ConstantRgb = 1 << TextureId::TAG_SHIFT,
-    ConstantSpectrum = 2 << TextureId::TAG_SHIFT,
+    Constant = 0 << TextureId::TAG_SHIFT,
     ImageRgb = 3 << TextureId::TAG_SHIFT,
     Scale = 4 << TextureId::TAG_SHIFT,
     Mix = 5 << TextureId::TAG_SHIFT,
@@ -47,26 +41,9 @@ impl TextureId {
 }
 
 impl Scene {
-    pub fn add_constant_float_texture(&mut self, value: f32) -> TextureId {
-        let id = TextureId::new(TextureType::ConstantFloat, self.constant_float_tex.len());
-        self.constant_float_tex.push(ConstantFloatTexture { value });
-        id
-    }
-
-    pub fn add_constant_rgb_texture(&mut self, rgb: Vec3) -> TextureId {
-        let id = TextureId::new(TextureType::ConstantRgb, self.constant_rgb_tex.len());
-        self.constant_rgb_tex
-            .push(ConstantRgbTexture { rgb, _padding: 0 });
-        id
-    }
-
-    pub fn add_constant_spectrum_texture(&mut self, spectrum: u32) -> TextureId {
-        let id = TextureId::new(
-            TextureType::ConstantSpectrum,
-            self.constant_spectrum_tex.len(),
-        );
-        self.constant_spectrum_tex
-            .push(ConstantSpectrumTexture { spectrum });
+    pub fn add_constant_texture(&mut self, spectrum: SpectrumId) -> TextureId {
+        let id = TextureId::new(TextureType::Constant, self.constant_tex.len());
+        self.constant_tex.push(ConstantTexture { spectrum });
         id
     }
 
@@ -103,21 +80,8 @@ impl Scene {
 
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
-pub struct ConstantFloatTexture {
-    pub value: f32,
-}
-
-#[derive(Copy, Clone, Debug, NoUninit)]
-#[repr(C)]
-pub struct ConstantRgbTexture {
-    pub rgb: Vec3,
-    pub _padding: u32,
-}
-
-#[derive(Copy, Clone, Debug, NoUninit)]
-#[repr(C)]
-pub struct ConstantSpectrumTexture {
-    pub spectrum: u32,
+pub struct ConstantTexture {
+    pub spectrum: SpectrumId,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]

@@ -14,5 +14,6 @@ fn inf_light_image_emission(light: ImageLight, ray_: Ray, wl: Wavelengths) -> ve
     let uv = equal_area_dir_to_square(normalize(ray.d));
     let texel = vec2u(fract(uv) * vec2f(textureDimensions(IMAGES[light.image])));
     let rgb = textureLoad(IMAGES[light.image], texel, 0).xyz;
-    return spectrum_rgb_illuminant_sample(rgb, wl) * light.scale;
+    let spectrum = RgbIlluminantSpectrum(rgb, SPECTRUM_D65_1NIT);
+    return spectrum_rgb_illuminant_sample(spectrum, wl) * light.scale;
 }

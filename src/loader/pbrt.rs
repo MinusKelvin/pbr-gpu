@@ -11,16 +11,18 @@ use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
-    ImageLight, LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, Sphere, TextureId,
-    TriVertex,
+    ImageLight, LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere,
+    TextureId, TriVertex,
 };
+use crate::spectrum::SpectrumData;
 use crate::{ProjectiveCamera, Transform};
 
 lalrpop_mod!(grammar, "/loader/pbrt.rs");
 
-pub fn load_pbrt_scene(path: &Path) -> (RenderOptions, Scene) {
-    let mut scene = Scene::default();
-    let error_texture = scene.add_constant_rgb_texture(Vec3::new(1.0, 0.0, 1.0));
+pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOptions, Scene) {
+    let mut scene = Scene::new(spectrum_data);
+    let spectrum = scene.add_rgb_albedo_spectrum(Vec3::new(1.0, 0.0, 1.0));
+    let error_texture = scene.add_constant_texture(spectrum);
     let error_material = scene.add_diffuse_material(error_texture);
 
     let mut builder = SceneBuilder {
@@ -74,7 +76,7 @@ pub struct SceneBuilder {
 struct State {
     transform: DMat4,
     material: MaterialId,
-    area_light: Option<Vec3>,
+    area_light: Option<SpectrumId>,
 }
 
 impl SceneBuilder {
@@ -235,43 +237,76 @@ impl SceneBuilder {
     }
 
     fn scale_texture(&mut self, name: &str, props: Props) {
-        let left = self
-            .texture_property(&props, "tex")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
-        let right = self
-            .texture_property(&props, "scale")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
+        let left = self.texture_property(&props, "tex").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(spec)
+        });
+        let right = self.texture_property(&props, "scale").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(spec)
+        });
         let id = self.scene.add_scale_texture(left, right);
         self.textures.insert(name.to_owned(), id);
     }
 
     fn mix_texture(&mut self, name: &str, props: Props) {
-        let tex1 = self
-            .texture_property(&props, "tex1")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.0));
-        let tex2 = self
-            .texture_property(&props, "tex2")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
-        let amount = self
-            .texture_property(&props, "amount")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.5));
+        let tex1 = self.texture_property(&props, "tex1").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(0.0);
+            self.scene.add_constant_texture(spec)
+        });
+        let tex2 = self.texture_property(&props, "tex2").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(spec)
+        });
+        let amount = self.texture_property(&props, "amount").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(0.5);
+            self.scene.add_constant_texture(spec)
+        });
         let id = self.scene.add_mix_texture(tex1, tex2, amount);
         self.textures.insert(name.to_owned(), id);
     }
 
     fn checkerboard_texture(&mut self, name: &str, props: Props) {
-        let even = self
-            .texture_property(&props, "tex1")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(1.0));
-        let odd = self
-            .texture_property(&props, "tex2")
-            .unwrap_or_else(|| self.scene.add_constant_float_texture(0.0));
+        let even = self.texture_property(&props, "tex1").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(spec)
+        });
+        let odd = self.texture_property(&props, "tex2").unwrap_or_else(|| {
+            let spec = self.scene.add_constant_spectrum(0.0);
+            self.scene.add_constant_texture(spec)
+        });
         let id = self.scene.add_checkerboard_texture(even, odd);
         self.textures.insert(name.to_owned(), id);
     }
 
     fn unrecognized_texture(&mut self, ty: &str) {
         println!("Unrecognized texture type {ty}");
+    }
+
+    fn spectrum_property(&mut self, props: &Props, name: &str, scale: f32, illum: bool) -> Option<SpectrumId> {
+        match props.type_of(name)? {
+            "rgb" if illum => Some(self.scene.add_rgb_illuminant_spectrum(
+                props.get_vec3_list(name).unwrap()[0].as_vec3(),
+                SpectrumId::D65,
+            )),
+            "rgb" => Some(
+                self.scene
+                    .add_rgb_albedo_spectrum(props.get_vec3_list(name).unwrap()[0].as_vec3()),
+            ),
+            "float" => Some(
+                self.scene
+                    .add_constant_spectrum(props.get_float(name).unwrap() as f32),
+            ),
+            "blackbody" => Some(self.scene.add_blackbody_spectrum(
+                props.get_float(name).unwrap() as f32,
+                scale,
+                true,
+            )),
+            ty => {
+                println!("Unrecognized spectrum property type {ty}");
+                None
+            }
+        }
     }
 
     fn texture_property(&mut self, props: &Props, name: &str) -> Option<TextureId> {
@@ -282,18 +317,9 @@ impl SceneBuilder {
                     .copied()
                     .unwrap_or(self.error_texture),
             ),
-            "rgb" => Some(
-                self.scene
-                    .add_constant_rgb_texture(props.get_vec3_list(name).unwrap()[0].as_vec3()),
-            ),
-            "float" => Some(
-                self.scene
-                    .add_constant_float_texture(props.get_float(name).unwrap() as f32),
-            ),
-            ty => {
-                println!("Unrecognized texture property type {ty}");
-                None
-            }
+            _ => self
+                .spectrum_property(props, name, 1.0, false)
+                .map(|spectrum| self.scene.add_constant_texture(spectrum)),
         }
     }
 
@@ -306,16 +332,25 @@ impl SceneBuilder {
             "diffuse" => {
                 let texture = self
                     .texture_property(&props, "reflectance")
-                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.5));
+                    .unwrap_or_else(|| {
+                        let spec = self.scene.add_constant_spectrum(0.5);
+                        self.scene.add_constant_texture(spec)
+                    });
                 self.scene.add_diffuse_material(texture)
             }
             "diffusetransmission" => {
-                let reflectance = self
-                    .texture_property(&props, "reflectance")
-                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.25));
+                let reflectance =
+                    self.texture_property(&props, "reflectance")
+                        .unwrap_or_else(|| {
+                            let spec = self.scene.add_constant_spectrum(0.25);
+                            self.scene.add_constant_texture(spec)
+                        });
                 let transmittance = self
                     .texture_property(&props, "transmittance")
-                    .unwrap_or_else(|| self.scene.add_constant_float_texture(0.25));
+                    .unwrap_or_else(|| {
+                        let spec = self.scene.add_constant_spectrum(0.25);
+                        self.scene.add_constant_texture(spec)
+                    });
                 self.scene
                     .add_diffuse_transmit_material(reflectance, transmittance)
             }
@@ -343,9 +378,8 @@ impl SceneBuilder {
     }
 
     fn infinite_light(&mut self, props: Props) {
+        let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         if let Some(filename) = props.get_string("filename") {
-            let scale = props.get_float("scale").unwrap_or(1.0) as f32;
-
             let Some(image) = self.scene.add_image(&self.base.join(filename)) else {
                 return;
             };
@@ -358,11 +392,8 @@ impl SceneBuilder {
                 scale,
                 _padding: [0; 2],
             });
-        } else if props.type_of("L").unwrap() == "blackbody" {
-            println!("blackbody spectrum not supported");
-        } else {
-            let color = props.get_vec3_list("L").unwrap()[0].as_vec3();
-            self.scene.add_uniform_light(color);
+        } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
+            self.scene.add_uniform_light(spectrum);
         }
     }
 
@@ -371,12 +402,8 @@ impl SceneBuilder {
     }
 
     fn diffuse_area_light(&mut self, props: Props) {
-        match props.type_of("L").unwrap() {
-            "rgb" => self.state.area_light = Some(props.get_vec3_list("L").unwrap()[0].as_vec3()),
-            ty => {
-                println!("Unknown light spectrum type {ty}")
-            }
-        }
+        let scale = props.get_float("scale").unwrap_or(1.0) as f32;
+        self.state.area_light = self.spectrum_property(&props, "L", scale, true);
     }
 
     fn unrecognized_area_light(&mut self, ty: &str) {
@@ -401,7 +428,7 @@ impl SceneBuilder {
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
         let light = match self.state.area_light {
-            Some(rgb) => self.scene.add_area_light(shape_id, rgb),
+            Some(spectrum) => self.scene.add_area_light(shape_id, spectrum),
             None => LightId::ZERO,
         };
 
@@ -542,7 +569,7 @@ impl<'a> Props<'a> {
     fn get_float(&self, name: &str) -> Option<f64> {
         self.map
             .get(name)
-            .filter(|&&(ty, _)| ty == "float")
+            .filter(|&&(ty, _)| ty == "float" || ty == "blackbody")
             .and_then(|(_, vals)| vals.get(0))
             .and_then(Value::as_number)
     }
