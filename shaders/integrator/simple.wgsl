@@ -59,6 +59,15 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         throughput *= bsdf_s.f * abs(bsdf_s.dir.z) / bsdf_s.pdf;
 
+        // russian roulette
+        let rr = max(max(throughput.x, throughput.y), max(throughput.z, throughput.w));
+        if rr < 1 && depth > 1 {
+            if sample_1d() >= rr {
+                break;
+            }
+            throughput /= rr;
+        }
+
         // spawn new ray
         let offset = copysign(10, bsdf_s.dir.z) * EPSILON * max(1, length(result.p));
         ray.o = result.p + result.n * offset;
