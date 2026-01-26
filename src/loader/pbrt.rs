@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use flate2::read::GzDecoder;
 use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
+use image::GenericImageView;
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
@@ -389,6 +390,7 @@ impl SceneBuilder {
             let Some(image) = self.scene.add_image(&self.base.join(filename)) else {
                 return;
             };
+            let sampling_distr = self.scene.image_sampling_distribution(image);
             self.scene.add_image_light(ImageLight {
                 transform: Transform {
                     m: self.state.transform.as_mat4(),
@@ -396,7 +398,8 @@ impl SceneBuilder {
                 },
                 image,
                 scale,
-                _padding: [0; 2],
+                sampling_distr,
+                _padding: [0; 3],
             });
         } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
             self.scene.add_uniform_light(spectrum);

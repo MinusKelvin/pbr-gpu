@@ -18,8 +18,10 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         if !result.hit {
             // add infinite lights and finish
-            for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
-                radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
+            if depth == 0 {
+                for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+                    radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
+                }
             }
             break;
         }
@@ -37,11 +39,20 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         // construct shading coordinate system
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));
-
         let old_dir = to_bsdf_frame * -ray.d;
 
+        // sample direct lighting
+        radiance += throughput * _sample_direct_light(
+            bsdf,
+            to_bsdf_frame,
+            old_dir,
+            result,
+            ray,
+            wl,
+        );
+
         // sample bsdf
-        let bsdf_s = bsdf_sample(bsdf, old_dir, vec3f(sample_2d(), 0.0));
+        let bsdf_s = bsdf_sample(bsdf, old_dir, vec3f(sample_2d(), sample_1d()));
         if bsdf_s.pdf == 0 {
             break;
         }
@@ -55,4 +66,39 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     }
 
     return radiance;
+}
+
+fn _sample_direct_light(
+    bsdf: Bsdf,
+    to_bsdf_frame: mat3x3f,
+    old_dir: vec3f,
+    hit: RaycastResult,
+    ray_: Ray,
+    wl: Wavelengths,
+) -> vec4f {
+    let light_sample = light_sampler_sample(wl, vec3f(sample_2d(), sample_1d()));
+    if light_sample.pdf_wrt_solid_angle == 0 {
+        return vec4f();
+    }
+
+    let new_dir = to_bsdf_frame * light_sample.dir;
+    let contribution = light_sample.emission
+        * bsdf_f(bsdf, old_dir, new_dir)
+        * abs(new_dir.z)
+        / light_sample.pdf_wrt_solid_angle;
+
+    if all(contribution == vec4f()) {
+        return vec4f();
+    }
+
+    var ray = ray_;
+    let offset = copysign(10, new_dir.z) * EPSILON * max(1, length(hit.p));
+    ray.o = hit.p + hit.n * offset;
+    ray.d = light_sample.dir;
+
+    if scene_raycast(ray).hit {
+        return vec4f();
+    }
+
+    return contribution;
 }

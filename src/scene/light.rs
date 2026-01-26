@@ -1,7 +1,7 @@
 use bytemuck::NoUninit;
 
 use crate::Transform;
-use crate::scene::{NodeId, Scene, ShapeId, SpectrumId};
+use crate::scene::{NodeId, Scene, ShapeId, SpectrumId, TableSampler2d};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -83,7 +83,8 @@ pub struct ImageLight {
     pub transform: Transform,
     pub image: u32,
     pub scale: f32,
-    pub _padding: [u32; 2],
+    pub sampling_distr: TableSampler2d,
+    pub _padding: [u32; 3],
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]

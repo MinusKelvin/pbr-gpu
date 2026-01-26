@@ -57,3 +57,22 @@ fn equal_area_dir_to_square(dir: vec3f) -> vec2f {
     p *= select(sign(dir.xy), vec2(1.0), dir.xy == vec2(0.0));
     return (p + 1.0) * 0.5;
 }
+
+fn equal_area_square_to_dir(p: vec2f) -> vec3f {
+    let uv = 2 * p - 1;
+    let uvp = abs(uv);
+
+    let signed_distance = 1 - (uvp.x + uvp.y);
+    let d = abs(signed_distance);
+    let r = 1 - d;
+
+    let phi = PI / 4 * select((uvp.y - uvp.x) / r + 1, 1, r == 0);
+
+    let z = copysign(1 - r * r, signed_distance);
+
+    let cos_phi = copysign(cos(phi), uv.x);
+    let sin_phi = copysign(sin(phi), uv.y);
+
+    let factor = r * sqrt(2 - r * r);
+    return vec3f(cos_phi * factor, sin_phi * factor, z);
+}

@@ -4,6 +4,9 @@ use std::path::Path;
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
 use image::DynamicImage;
+use image::Pixel;
+use image::Rgba32FImage;
+use image::RgbaImage;
 use wgpu::util::DeviceExt;
 
 use crate::spectrum::SpectrumData;
@@ -12,16 +15,18 @@ use crate::storage_buffer_entry;
 mod light;
 mod material;
 mod node;
+mod other;
 mod shapes;
-mod texture;
 mod spectra;
+mod texture;
 
 pub use self::light::*;
 pub use self::material::*;
 pub use self::node::*;
+pub use self::other::*;
 pub use self::shapes::*;
-pub use self::texture::*;
 pub use self::spectra::*;
+pub use self::texture::*;
 
 #[derive(Default)]
 pub struct Scene {
@@ -40,7 +45,7 @@ pub struct Scene {
     pub mix_tex: Vec<MixTexture>,
     pub checkerboard_tex: Vec<CheckerboardTexture>,
 
-    pub images: Vec<image::DynamicImage>,
+    pub images: Vec<ImageData>,
 
     pub diffuse_mat: Vec<DiffuseMaterial>,
     pub diffuse_transmit_mat: Vec<DiffuseTransmitMaterial>,
@@ -57,7 +62,14 @@ pub struct Scene {
     pub rgb_illuminant_spectra: Vec<RgbIlluminantSpectrum>,
     pub blackbody_spectra: Vec<BlackbodySpectrum>,
 
+    pub float_data: Vec<f32>,
+
     pub root: Option<NodeId>,
+}
+
+enum ImageData {
+    Float(Rgba32FImage),
+    Srgb(RgbaImage),
 }
 
 impl Scene {
@@ -109,6 +121,7 @@ impl Scene {
                 storage_buffer_entry(162),
                 storage_buffer_entry(163),
                 storage_buffer_entry(164),
+                storage_buffer_entry(192),
             ],
         })
     }
@@ -149,9 +162,11 @@ impl Scene {
         let rgb_illuminant_spectra = make_buffer(device, &self.rgb_illuminant_spectra);
         let blackbody_spectra = make_buffer(device, &self.blackbody_spectra);
 
+        let float_data = make_buffer(device, &self.float_data);
+
         let root = make_buffer(device, &[self.root.unwrap()]);
 
-        let empty = [DynamicImage::new(1, 1, image::ColorType::Rgba8)];
+        let empty = [ImageData::Srgb(RgbaImage::new(1, 1))];
         let images = match self.images.is_empty() {
             true => empty.iter(),
             false => self.images.iter(),
@@ -159,36 +174,37 @@ impl Scene {
 
         let views: Vec<_> = images
             .map(|img| {
-                let mut desc = wgpu::TextureDescriptor {
-                    label: None,
-                    size: wgpu::Extent3d {
-                        width: img.width(),
-                        height: img.height(),
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                };
-
-                let mut img_rgba32f;
-                let mut img_rgba8;
-
-                let data = if img.as_flat_samples_f32().is_some() {
-                    img_rgba32f = img.to_rgba32f();
-                    desc.format = wgpu::TextureFormat::Rgba32Float;
-                    bytemuck::cast_slice(&img_rgba32f)
-                } else {
-                    img_rgba8 = img.to_rgba8();
-                    bytemuck::cast_slice(&img_rgba8)
+                let (width, height, format, data) = match img {
+                    ImageData::Float(img) => (
+                        img.width(),
+                        img.height(),
+                        wgpu::TextureFormat::Rgba32Float,
+                        bytemuck::cast_slice(&img),
+                    ),
+                    ImageData::Srgb(img) => (
+                        img.width(),
+                        img.height(),
+                        wgpu::TextureFormat::Rgba8UnormSrgb,
+                        bytemuck::cast_slice(&img),
+                    ),
                 };
 
                 let texture = device.create_texture_with_data(
                     queue,
-                    &desc,
+                    &wgpu::TextureDescriptor {
+                        label: None,
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    },
                     wgpu::util::TextureDataOrder::LayerMajor,
                     data,
                 );
@@ -229,6 +245,7 @@ impl Scene {
                 make_entry(162, &rgb_albedo_spectra),
                 make_entry(163, &rgb_illuminant_spectra),
                 make_entry(164, &blackbody_spectra),
+                make_entry(192, &float_data),
             ],
         })
     }
@@ -240,8 +257,34 @@ impl Scene {
             return None;
         };
         let id = self.images.len() as u32;
-        self.images.push(img);
+        self.images.push(match img.as_flat_samples_f32().is_some() {
+            true => ImageData::Float(img.to_rgba32f()),
+            false => ImageData::Srgb(img.to_rgba8()),
+        });
         Some(id)
+    }
+
+    pub fn image_sampling_distribution(&mut self, image: u32) -> TableSampler2d {
+        let (width, height, f) = match &self.images[image as usize] {
+            ImageData::Float(img) => (
+                img.width(),
+                img.height(),
+                img.pixels().map(|c| c.to_luma().0[0]).collect::<Vec<_>>(),
+            ),
+            ImageData::Srgb(img) => (
+                img.width(),
+                img.height(),
+                img.pixels().map(|c| c.to_luma().0[0] as f32).collect(),
+            ),
+        };
+
+        self.add_2d_table_sampler(0.0, 1.0, 0.0, 1.0, width, height, &f)
+    }
+
+    pub fn add_float_data(&mut self, data: &[f32]) -> u32 {
+        let base = self.float_data.len() as u32;
+        self.float_data.extend_from_slice(&data);
+        base
     }
 }
 
