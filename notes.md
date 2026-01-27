@@ -39,6 +39,34 @@ We will need to implement a similar system for mix materials and mix textures, i
 The only wrinkle is that arbitrarily composing these kinds of things makes lights in instanced objects even more difficult, since every instancing level requires an additional light sampling path to be traversed to find the light sampling probability for MIS.
 One issue is maintaining the stack for transform nodes, which require saving the original ray since we don't want to lose precision by un-transforming the ray.
 
+# final design
+
+The TLAS is a BVH of Objects.
+
+1. Simple Object
+  - Does not have a transformation matrix
+  - Delegates to a Primitive
+2. BVH Object
+  - Has a transformation matrix
+  - Knows its light sampling path
+  - Shares the BVH of Primitives
+  - Shares the (BVH) light sampler
+3. SVO Object
+  - Has a transformation matrix
+  - Knows its light sampling path
+  - Shares the SVO of voxels
+  - Shares the SVO light sampler
+
+A Primitive:
+  - Has a shape (sphere, disk, triangle, etc.)
+  - Has a material
+  - Has an alpha mask
+  - Knows the medium on each side of it
+  - Knows its light sampling path
+Since most primitives only have a shape and a material, there should be a special .
+
+Voxels are like primitives, but they don't know their light sampling path (this is in fact the position of the voxel in the SVO, which is found during SVO traversal).
+
 # radeon gpu profiler capture
 
 remove submits after the work, then use `MESA_VK_TRACE_PER_SUBMIT=1 MESA_VK_TRACE=rgp` env vars.

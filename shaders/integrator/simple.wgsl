@@ -12,13 +12,15 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     var ray = ray_;
 
+    var specular_bounce = false;
+
     var depth = 0;
     while any(throughput > vec4f()) {
         let result = scene_raycast(ray);
 
         if !result.hit {
             // add infinite lights and finish
-            if depth == 0 {
+            if depth == 0 || specular_bounce {
                 for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
                     radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
                 }
@@ -72,6 +74,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let offset = copysign(10, bsdf_s.dir.z) * EPSILON * max(1, length(result.p));
         ray.o = result.p + result.n * offset;
         ray.d = transpose(to_bsdf_frame) * bsdf_s.dir;
+        specular_bounce = bsdf_s.specular;
     }
 
     return radiance;

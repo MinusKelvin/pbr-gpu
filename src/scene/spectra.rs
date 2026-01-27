@@ -15,6 +15,7 @@ enum SpectrumType {
     RgbAlbedo = 2 << SpectrumId::TAG_SHIFT,
     RgbIlluminant = 3 << SpectrumId::TAG_SHIFT,
     Blackbody = 4 << SpectrumId::TAG_SHIFT,
+    PiecewiseLinear = 5 << SpectrumId::TAG_SHIFT,
 }
 
 impl SpectrumId {
@@ -84,7 +85,9 @@ impl Scene {
             true => {
                 // the additional divisors account for the way i've rescaled the color matching
                 // curves so that everything appears at about the right brightness
-                1.0 / blackbody(2.8977721e-3 / temperature * 1e9, temperature) / 683.002 / 106.85677347943344
+                1.0 / blackbody(2.8977721e-3 / temperature * 1e9, temperature)
+                    / 683.002
+                    / 106.85677347943344
             }
             false => 1.0,
         };
@@ -92,6 +95,19 @@ impl Scene {
         self.blackbody_spectra.push(BlackbodySpectrum {
             temperature,
             scale: scale * normalization_factor,
+        });
+        id
+    }
+
+    pub fn add_piecewise_linear_spectrum(&mut self, data: &[[f32; 2]]) -> SpectrumId {
+        let id = SpectrumId::new(
+            SpectrumType::PiecewiseLinear,
+            self.piecewise_linear_spectra.len(),
+        );
+        let ptr = self.add_float_data(data.as_flattened());
+        self.piecewise_linear_spectra.push(PiecewiseLinearSpectrum {
+            ptr,
+            entries: data.len() as u32,
         });
         id
     }
@@ -128,6 +144,13 @@ pub struct RgbIlluminantSpectrum {
 pub struct BlackbodySpectrum {
     pub temperature: f32,
     pub scale: f32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct PiecewiseLinearSpectrum {
+    pub ptr: u32,
+    pub entries: u32,
 }
 
 fn blackbody(lambda: f32, temperature: f32) -> f32 {

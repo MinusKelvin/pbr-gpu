@@ -42,7 +42,7 @@ Statement: () = {
         "scale" => builder.scale_texture(name, props),
         "mix" => builder.mix_texture(name, props),
         "checkerboard" => builder.checkerboard_texture(name, props),
-        "imagemap" => builder.image_texture(name, props),
+        "imagemap" => builder.image_texture(name, kind, props),
         _ => builder.unrecognized_texture(ty),
     },
 

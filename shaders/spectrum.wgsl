@@ -16,6 +16,8 @@ var<storage> RGB_ALBEDO_SPECTRA: array<RgbAlbedoSpectrum>;
 var<storage> RGB_ILLUMINANT_SPECTRA: array<RgbIlluminantSpectrum>;
 @group(0) @binding(164)
 var<storage> BLACKBODY_SPECTRA: array<BlackbodySpectrum>;
+@group(0) @binding(165)
+var<storage> PIECEWISE_LINEAR_SPECTRA: array<PiecewiseLinearSpectrum>;
 
 const SPECTRUM_TAG_BITS: u32 = 3;
 const SPECTRUM_TAG_SHIFT: u32 = 32 - SPECTRUM_TAG_BITS;
@@ -27,6 +29,7 @@ const SPECTRUM_CONSTANT: u32 = 1 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_RGB_ALBEDO: u32 = 2 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_RGB_ILLUMINANT: u32 = 3 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_BLACKBODY: u32 = 4 << SPECTRUM_TAG_SHIFT;
+const SPECTRUM_PIECEWISE_LINEAR: u32 = 5 << SPECTRUM_TAG_SHIFT;
 
 @group(1) @binding(32)
 var RGB_TO_COEFF: texture_3d<f32>;
@@ -61,6 +64,11 @@ struct BlackbodySpectrum {
     scale: f32,
 }
 
+struct PiecewiseLinearSpectrum {
+    data: u32,
+    entries: u32,
+}
+
 fn spectrum_sample(spectrum: SpectrumId, wl: Wavelengths) -> vec4f {
     let idx = spectrum.id & SPECTRUM_IDX_MASK;
     switch spectrum.id & SPECTRUM_TAG_MASK {
@@ -78,6 +86,9 @@ fn spectrum_sample(spectrum: SpectrumId, wl: Wavelengths) -> vec4f {
         }
         case SPECTRUM_BLACKBODY {
             return spectrum_blackbody_sample(BLACKBODY_SPECTRA[idx], wl);
+        }
+        case SPECTRUM_PIECEWISE_LINEAR {
+            return spectrum_piecewise_linear_sample(PIECEWISE_LINEAR_SPECTRA[idx], wl);
         }
         default {
             // unreachable
@@ -126,4 +137,50 @@ fn spectrum_blackbody_sample(spectrum: BlackbodySpectrum, wl: Wavelengths) -> ve
         blackbody(wl.l.z, spectrum.temperature),
         blackbody(wl.l.w, spectrum.temperature),
     );
+}
+
+fn spectrum_piecewise_linear_sample(spectrum: PiecewiseLinearSpectrum, wl: Wavelengths) -> vec4f {
+    var min = vec4u(0);
+    var max = vec4u(spectrum.entries - 1);
+    while any(min < max) {
+        let mid = (min + max + 1) / 2;
+        let data = vec4f(
+            FLOAT_DATA[spectrum.data + mid.x * 2],
+            FLOAT_DATA[spectrum.data + mid.y * 2],
+            FLOAT_DATA[spectrum.data + mid.z * 2],
+            FLOAT_DATA[spectrum.data + mid.w * 2],
+        );
+        min = select(min, mid, data <= wl.l);
+        max = select(mid - 1, max, data <= wl.l);
+    }
+
+    let x0 = vec4f(
+        FLOAT_DATA[spectrum.data + min.x * 2],
+        FLOAT_DATA[spectrum.data + min.y * 2],
+        FLOAT_DATA[spectrum.data + min.z * 2],
+        FLOAT_DATA[spectrum.data + min.w * 2],
+    );
+    let x1 = vec4f(
+        FLOAT_DATA[spectrum.data + min.x * 2 + 2],
+        FLOAT_DATA[spectrum.data + min.y * 2 + 2],
+        FLOAT_DATA[spectrum.data + min.z * 2 + 2],
+        FLOAT_DATA[spectrum.data + min.w * 2 + 2],
+    );
+
+    let t = (wl.l - x0) / (x1 - x0);
+
+    let v0 = vec4f(
+        FLOAT_DATA[spectrum.data + min.x * 2 + 1],
+        FLOAT_DATA[spectrum.data + min.y * 2 + 1],
+        FLOAT_DATA[spectrum.data + min.z * 2 + 1],
+        FLOAT_DATA[spectrum.data + min.w * 2 + 1],
+    );
+    let v1 = vec4f(
+        FLOAT_DATA[spectrum.data + min.x * 2 + 3],
+        FLOAT_DATA[spectrum.data + min.y * 2 + 3],
+        FLOAT_DATA[spectrum.data + min.z * 2 + 3],
+        FLOAT_DATA[spectrum.data + min.w * 2 + 3],
+    );
+
+    return mix(v0, v1, t);
 }

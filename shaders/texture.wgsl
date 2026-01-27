@@ -10,6 +10,7 @@ const TEXTURE_IDX_MASK: u32 = (1 << TEXTURE_TAG_SHIFT) - 1;
 const TEXTURE_TAG_MASK: u32 = ~TEXTURE_IDX_MASK;
 
 const TEXTURE_CONSTANT: u32 = 0 << TEXTURE_TAG_SHIFT;
+const TEXTURE_IMAGE_FLOAT: u32 = 2 << TEXTURE_TAG_SHIFT;
 const TEXTURE_IMAGE_RGB: u32 = 3 << TEXTURE_TAG_SHIFT;
 const TEXTURE_SCALE: u32 = 4 << TEXTURE_TAG_SHIFT;
 const TEXTURE_MIX: u32 = 5 << TEXTURE_TAG_SHIFT;
@@ -17,6 +18,8 @@ const TEXTURE_CHECKERBOARD: u32 = 6 << TEXTURE_TAG_SHIFT;
 
 @group(0) @binding(64)
 var<storage> CONSTANT_TEXTURES: array<ConstantTexture>;
+@group(0) @binding(66)
+var<storage> IMAGE_FLOAT_TEXTURES: array<ImageFloatTexture>;
 @group(0) @binding(67)
 var<storage> IMAGE_RGB_TEXTURES: array<ImageRgbTexture>;
 @group(0) @binding(68)
@@ -33,6 +36,10 @@ struct ConstantTexture {
 }
 
 struct ImageRgbTexture {
+    image_index: u32,
+}
+
+struct ImageFloatTexture {
     image_index: u32,
 }
 
@@ -69,6 +76,15 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
             switch tag {
                 case TEXTURE_CONSTANT {
                     data[data_i] = spectrum_sample(CONSTANT_TEXTURES[idx].spectrum, wl);
+                    data_i++;
+                }
+                case TEXTURE_IMAGE_FLOAT {
+                    let tex = IMAGE_FLOAT_TEXTURES[idx].image_index;
+                    let mapped = fract(uv);
+                    let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
+                        * vec2f(textureDimensions(IMAGES[tex]));
+                    let value = textureLoad(IMAGES[tex], vec2u(texel), 0).x;
+                    data[data_i] = vec4f(value);
                     data_i++;
                 }
                 case TEXTURE_IMAGE_RGB {

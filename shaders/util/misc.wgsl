@@ -71,3 +71,26 @@ fn any_orthonormal_frame(n: vec3f) -> mat3x3f {
         n
     );
 }
+
+fn complex_mul(a: vec2f, b: vec2f) -> vec2f {
+    return vec2f(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+fn complex_div(a: vec2f, b: vec2f) -> vec2f {
+    return complex_mul(a, vec2f(b.x, -b.y)) / dot(b, b);
+}
+
+fn complex_sqrt(a: vec2f) -> vec2f {
+    if a.y == 0 {
+        let r = sqrt(abs(a.x));
+        if a.x < 0 {
+            return vec2f(0, r);
+        } else {
+            return vec2f(r, 0);
+        }
+    }
+
+    let r = length(a);
+    let w = a + vec2f(r, 0);
+    return sqrt(r) * normalize(w);
+}

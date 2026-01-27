@@ -1,6 +1,6 @@
 use bytemuck::NoUninit;
 
-use crate::scene::{Scene, TextureId};
+use crate::scene::{Scene, SpectrumId, TextureId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -11,10 +11,11 @@ pub struct MaterialId(u32);
 enum MaterialType {
     Diffuse = 0 << MaterialId::TAG_SHIFT,
     DiffuseTransmit = 1 << MaterialId::TAG_SHIFT,
+    Conductor = 2 << MaterialId::TAG_SHIFT,
 }
 
 impl MaterialId {
-    const TAG_BITS: u32 = 1;
+    const TAG_BITS: u32 = 2;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
     const TAG_MASK: u32 = !Self::IDX_MASK;
@@ -49,10 +50,28 @@ impl Scene {
         reflectance: TextureId,
         transmittance: TextureId,
     ) -> MaterialId {
-        let id = MaterialId::new(MaterialType::DiffuseTransmit, self.diffuse_transmit_mat.len());
+        let id = MaterialId::new(
+            MaterialType::DiffuseTransmit,
+            self.diffuse_transmit_mat.len(),
+        );
         self.diffuse_transmit_mat.push(DiffuseTransmitMaterial {
             reflectance,
             transmittance,
+        });
+        id
+    }
+
+    pub fn add_conductor_material(
+        &mut self,
+        ior_re: SpectrumId,
+        ior_im: SpectrumId,
+        roughness: TextureId,
+    ) -> MaterialId {
+        let id = MaterialId::new(MaterialType::Conductor, self.conductor_mat.len());
+        self.conductor_mat.push(ConductorMaterial {
+            ior_re,
+            ior_im,
+            roughness,
         });
         id
     }
@@ -69,4 +88,12 @@ pub struct DiffuseMaterial {
 pub struct DiffuseTransmitMaterial {
     pub reflectance: TextureId,
     pub transmittance: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ConductorMaterial {
+    pub ior_re: SpectrumId,
+    pub ior_im: SpectrumId,
+    pub roughness: TextureId,
 }

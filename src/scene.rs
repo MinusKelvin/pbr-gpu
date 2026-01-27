@@ -3,7 +3,8 @@ use std::path::Path;
 
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
-use image::DynamicImage;
+use image::ImageBuffer;
+use image::Luma;
 use image::Pixel;
 use image::Rgba32FImage;
 use image::RgbaImage;
@@ -40,6 +41,7 @@ pub struct Scene {
     pub primitive_nodes: Vec<PrimitiveNode>,
 
     pub constant_tex: Vec<ConstantTexture>,
+    pub image_float_tex: Vec<ImageFloatTexture>,
     pub image_rgb_tex: Vec<ImageRgbTexture>,
     pub scale_tex: Vec<ScaleTexture>,
     pub mix_tex: Vec<MixTexture>,
@@ -49,6 +51,7 @@ pub struct Scene {
 
     pub diffuse_mat: Vec<DiffuseMaterial>,
     pub diffuse_transmit_mat: Vec<DiffuseTransmitMaterial>,
+    pub conductor_mat: Vec<ConductorMaterial>,
 
     pub infinite_lights: Vec<LightId>,
 
@@ -61,14 +64,16 @@ pub struct Scene {
     pub rgb_albedo_spectra: Vec<RgbAlbedoSpectrum>,
     pub rgb_illuminant_spectra: Vec<RgbIlluminantSpectrum>,
     pub blackbody_spectra: Vec<BlackbodySpectrum>,
+    pub piecewise_linear_spectra: Vec<PiecewiseLinearSpectrum>,
 
     pub float_data: Vec<f32>,
 
     pub root: Option<NodeId>,
 }
 
-enum ImageData {
-    Float(Rgba32FImage),
+pub enum ImageData {
+    Float(ImageBuffer<Luma<f32>, Vec<f32>>),
+    FloatRgb(Rgba32FImage),
     Srgb(RgbaImage),
 }
 
@@ -94,6 +99,7 @@ impl Scene {
                 storage_buffer_entry(34),
                 storage_buffer_entry(35),
                 storage_buffer_entry(64),
+                storage_buffer_entry(66),
                 storage_buffer_entry(67),
                 wgpu::BindGroupLayoutEntry {
                     binding: 68,
@@ -112,6 +118,7 @@ impl Scene {
                 storage_buffer_entry(71),
                 storage_buffer_entry(96),
                 storage_buffer_entry(97),
+                storage_buffer_entry(98),
                 storage_buffer_entry(128),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
@@ -121,6 +128,7 @@ impl Scene {
                 storage_buffer_entry(162),
                 storage_buffer_entry(163),
                 storage_buffer_entry(164),
+                storage_buffer_entry(165),
                 storage_buffer_entry(192),
             ],
         })
@@ -142,6 +150,7 @@ impl Scene {
         let primitive = make_buffer(device, &self.primitive_nodes);
 
         let constant_tex = make_buffer(device, &self.constant_tex);
+        let image_float_tex = make_buffer(device, &self.image_float_tex);
         let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
         let scale_tex = make_buffer(device, &self.scale_tex);
         let mix_tex = make_buffer(device, &self.mix_tex);
@@ -149,6 +158,7 @@ impl Scene {
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
+        let conductor_mat = make_buffer(device, &self.conductor_mat);
 
         let infinite_lights = make_buffer(device, &self.infinite_lights);
 
@@ -161,6 +171,7 @@ impl Scene {
         let rgb_albedo_spectra = make_buffer(device, &self.rgb_albedo_spectra);
         let rgb_illuminant_spectra = make_buffer(device, &self.rgb_illuminant_spectra);
         let blackbody_spectra = make_buffer(device, &self.blackbody_spectra);
+        let piecewise_linear_spectra = make_buffer(device, &self.piecewise_linear_spectra);
 
         let float_data = make_buffer(device, &self.float_data);
 
@@ -176,6 +187,12 @@ impl Scene {
             .map(|img| {
                 let (width, height, format, data) = match img {
                     ImageData::Float(img) => (
+                        img.width(),
+                        img.height(),
+                        wgpu::TextureFormat::R32Float,
+                        bytemuck::cast_slice(&img),
+                    ),
+                    ImageData::FloatRgb(img) => (
                         img.width(),
                         img.height(),
                         wgpu::TextureFormat::Rgba32Float,
@@ -226,6 +243,7 @@ impl Scene {
                 make_entry(34, &transform),
                 make_entry(35, &primitive),
                 make_entry(64, &constant_tex),
+                make_entry(66, &image_float_tex),
                 make_entry(67, &image_rgb_tex),
                 wgpu::BindGroupEntry {
                     binding: 68,
@@ -236,6 +254,7 @@ impl Scene {
                 make_entry(71, &checkerboard_tex),
                 make_entry(96, &diffuse_mat),
                 make_entry(97, &diffuse_transmit_mat),
+                make_entry(98, &conductor_mat),
                 make_entry(128, &infinite_lights),
                 make_entry(130, &uniform_lights),
                 make_entry(131, &image_lights),
@@ -245,12 +264,13 @@ impl Scene {
                 make_entry(162, &rgb_albedo_spectra),
                 make_entry(163, &rgb_illuminant_spectra),
                 make_entry(164, &blackbody_spectra),
+                make_entry(165, &piecewise_linear_spectra),
                 make_entry(192, &float_data),
             ],
         })
     }
 
-    pub fn add_image(&mut self, path: &Path) -> Option<u32> {
+    pub fn add_image(&mut self, path: &Path, float: bool) -> Option<u32> {
         let Ok(img) = image::open(path)
             .inspect_err(|e| println!("Could not load image {}: {e}", path.display()))
         else {
@@ -258,7 +278,8 @@ impl Scene {
         };
         let id = self.images.len() as u32;
         self.images.push(match img.as_flat_samples_f32().is_some() {
-            true => ImageData::Float(img.to_rgba32f()),
+            _ if float => ImageData::Float(img.to_luma32f()),
+            true => ImageData::FloatRgb(img.to_rgba32f()),
             false => ImageData::Srgb(img.to_rgba8()),
         });
         Some(id)
@@ -266,7 +287,8 @@ impl Scene {
 
     pub fn image_sampling_distribution(&mut self, image: u32) -> TableSampler2d {
         let (width, height, f) = match &self.images[image as usize] {
-            ImageData::Float(img) => (
+            ImageData::Float(img) => (img.width(), img.height(), img.to_vec()),
+            ImageData::FloatRgb(img) => (
                 img.width(),
                 img.height(),
                 img.pixels().map(|c| c.to_luma().0[0]).collect::<Vec<_>>(),

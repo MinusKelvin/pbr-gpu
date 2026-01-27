@@ -203,7 +203,7 @@ impl SceneBuilder {
         };
     }
 
-    fn image_texture(&mut self, name: &str, props: Props) {
+    fn image_texture(&mut self, name: &str, kind: &str, props: Props) {
         let filename = props.get_string("filename").unwrap();
 
         if let Some(v) = props.get_string("mapping")
@@ -230,11 +230,23 @@ impl SceneBuilder {
             println!("Note: imagemap uv-scale not supported");
         }
 
-        let Some(img) = self.scene.add_image(&self.base.join(filename)) else {
+        let is_float = match kind {
+            "spectrum" => false,
+            "float" => true,
+            _ => {
+                println!("Unrecognized texture kind {kind}");
+                return;
+            }
+        };
+
+        let Some(img) = self.scene.add_image(&self.base.join(filename), is_float) else {
             return;
         };
 
-        let id = self.scene.add_image_texture(img);
+        let id = match is_float {
+            true => self.scene.add_float_image_texture(img),
+            false => self.scene.add_rgb_image_texture(img),
+        };
         self.textures.insert(name.to_owned(), id);
     }
 
@@ -290,7 +302,13 @@ impl SceneBuilder {
         println!("Unrecognized texture type {ty}");
     }
 
-    fn spectrum_property(&mut self, props: &Props, name: &str, scale: f32, illum: bool) -> Option<SpectrumId> {
+    fn spectrum_property(
+        &mut self,
+        props: &Props,
+        name: &str,
+        scale: f32,
+        illum: bool,
+    ) -> Option<SpectrumId> {
         match props.type_of(name)? {
             "rgb" if illum => Some(self.scene.add_rgb_illuminant_spectrum(
                 props.get_vec3_list(name).unwrap()[0].as_vec3(),
@@ -309,6 +327,30 @@ impl SceneBuilder {
                 scale,
                 true,
             )),
+            "spectrum" => {
+                let data: Vec<_> = match (props.get_string(name), props.get_float_list(name)) {
+                    (Some(file), _) => {
+                        let path = self.base.join(file);
+                        let content = std::fs::read_to_string(&path)
+                            .unwrap_or_else(|e| panic!("{e}: {}", path.display()));
+                        content
+                            .lines()
+                            .filter(|l| !l.contains('#'))
+                            .filter_map(|l| l.split_once(char::is_whitespace))
+                            .map(|(l, v)| [l.trim().parse().unwrap(), v.trim().parse().unwrap()])
+                            .collect()
+                    }
+                    (_, Some(data)) => data
+                        .chunks_exact(2)
+                        .map(|a| [a[0] as f32, a[1] as f32])
+                        .collect(),
+                    _ => {
+                        println!("Could not interpret spectrum");
+                        return None;
+                    }
+                };
+                Some(self.scene.add_piecewise_linear_spectrum(&data))
+            }
             ty => {
                 println!("Unrecognized spectrum property type {ty}");
                 None
@@ -336,6 +378,20 @@ impl SceneBuilder {
                 println!("Note: coateddiffuse material will be completely diffuse");
                 self.make_material("diffuse", props)
             }
+            "coatedconductor" => {
+                println!("Note: coatedconductor material will be regular conductor");
+                let mut props = props;
+                if let Some(data) = props.map.remove("conductor.eta") {
+                    props.map.insert("eta", data);
+                }
+                if let Some(data) = props.map.remove("conductor.k") {
+                    props.map.insert("k", data);
+                }
+                if let Some(data) = props.map.remove("conductor.roughness") {
+                    props.map.insert("roughness", data);
+                }
+                self.make_material("conductor", props)
+            }
             "diffuse" => {
                 let texture = self
                     .texture_property(&props, "reflectance")
@@ -360,6 +416,21 @@ impl SceneBuilder {
                     });
                 self.scene
                     .add_diffuse_transmit_material(reflectance, transmittance)
+            }
+            "conductor" => {
+                if props.type_of("reflectance").is_some() {
+                    println!("Cannot set conductor IOR based on reflectance");
+                    return self.error_material;
+                }
+                let ior_re = self.spectrum_property(&props, "eta", 1.0, false).unwrap();
+                let ior_im = self.spectrum_property(&props, "k", 1.0, false).unwrap();
+                let roughness = self
+                    .texture_property(&props, "roughness")
+                    .unwrap_or_else(|| {
+                        let spec = self.scene.add_constant_spectrum(0.0);
+                        self.scene.add_constant_texture(spec)
+                    });
+                self.scene.add_conductor_material(ior_re, ior_im, roughness)
             }
             _ => {
                 println!("Unrecognized material type {ty}");
@@ -387,7 +458,7 @@ impl SceneBuilder {
     fn infinite_light(&mut self, props: Props) {
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         if let Some(filename) = props.get_string("filename") {
-            let Some(image) = self.scene.add_image(&self.base.join(filename)) else {
+            let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
                 return;
             };
             let sampling_distr = self.scene.image_sampling_distribution(image);
@@ -585,6 +656,13 @@ impl<'a> Props<'a> {
             .and_then(Value::as_number)
     }
 
+    fn get_float_list(&self, name: &str) -> Option<Vec<f64>> {
+        self.map
+            .get(name)
+            .filter(|&&(ty, _)| ty == "float" || ty == "spectrum")
+            .and_then(|(_, vals)| vals.into_iter().map(|v| v.as_number()).collect())
+    }
+
     fn get_uint_list(&self, name: &str) -> Option<Vec<u32>> {
         self.map
             .get(name)
@@ -627,7 +705,7 @@ impl<'a> Props<'a> {
     fn get_string(&self, name: &str) -> Option<&'a str> {
         self.map
             .get(name)
-            .filter(|&&(ty, _)| ty == "string" || ty == "texture")
+            .filter(|&&(ty, _)| ty == "string" || ty == "texture" || ty == "spectrum")
             .and_then(|(_, v)| v.get(0))
             .and_then(Value::as_string)
     }

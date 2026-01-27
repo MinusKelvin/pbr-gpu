@@ -10,6 +10,7 @@ pub struct TextureId(u32);
 #[repr(u32)]
 enum TextureType {
     Constant = 0 << TextureId::TAG_SHIFT,
+    ImageFloat = 2 << TextureId::TAG_SHIFT,
     ImageRgb = 3 << TextureId::TAG_SHIFT,
     Scale = 4 << TextureId::TAG_SHIFT,
     Mix = 5 << TextureId::TAG_SHIFT,
@@ -47,9 +48,15 @@ impl Scene {
         id
     }
 
-    pub fn add_image_texture(&mut self, image: u32) -> TextureId {
+    pub fn add_rgb_image_texture(&mut self, image: u32) -> TextureId {
         let id = TextureId::new(TextureType::ImageRgb, self.image_rgb_tex.len());
         self.image_rgb_tex.push(ImageRgbTexture { image });
+        id
+    }
+
+    pub fn add_float_image_texture(&mut self, image: u32) -> TextureId {
+        let id = TextureId::new(TextureType::ImageFloat, self.image_rgb_tex.len());
+        self.image_float_tex.push(ImageFloatTexture { image });
         id
     }
 
@@ -87,6 +94,12 @@ pub struct ConstantTexture {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct ImageRgbTexture {
+    pub image: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ImageFloatTexture {
     pub image: u32,
 }
 
