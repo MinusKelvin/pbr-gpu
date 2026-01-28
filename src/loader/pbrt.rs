@@ -328,28 +328,32 @@ impl SceneBuilder {
                 true,
             )),
             "spectrum" => {
-                let data: Vec<_> = match (props.get_string(name), props.get_float_list(name)) {
-                    (Some(file), _) => {
-                        let path = self.base.join(file);
-                        let content = std::fs::read_to_string(&path)
-                            .unwrap_or_else(|e| panic!("{e}: {}", path.display()));
-                        content
-                            .lines()
-                            .filter(|l| !l.contains('#'))
-                            .filter_map(|l| l.split_once(char::is_whitespace))
-                            .map(|(l, v)| [l.trim().parse().unwrap(), v.trim().parse().unwrap()])
-                            .collect()
-                    }
-                    (_, Some(data)) => data
+                if let Some(&spectrum) = props
+                    .get_string(name)
+                    .and_then(|name| self.scene.named_spectra.get(name))
+                {
+                    Some(spectrum)
+                } else if let Some(file) = props.get_string(name) {
+                    let path = self.base.join(file);
+                    let content = std::fs::read_to_string(&path)
+                        .unwrap_or_else(|e| panic!("{e}: {}", path.display()));
+                    let data: Vec<_> = content
+                        .lines()
+                        .filter(|l| !l.contains('#'))
+                        .filter_map(|l| l.split_once(char::is_whitespace))
+                        .map(|(l, v)| [l.trim().parse().unwrap(), v.trim().parse().unwrap()])
+                        .collect();
+                    Some(self.scene.add_piecewise_linear_spectrum(&data))
+                } else if let Some(data) = props.get_float_list(name) {
+                    let data: Vec<_> = data
                         .chunks_exact(2)
                         .map(|a| [a[0] as f32, a[1] as f32])
-                        .collect(),
-                    _ => {
-                        println!("Could not interpret spectrum");
-                        return None;
-                    }
-                };
-                Some(self.scene.add_piecewise_linear_spectrum(&data))
+                        .collect();
+                    Some(self.scene.add_piecewise_linear_spectrum(&data))
+                } else {
+                    println!("Could not interpret spectrum");
+                    None
+                }
             }
             ty => {
                 println!("Unrecognized spectrum property type {ty}");
@@ -422,8 +426,12 @@ impl SceneBuilder {
                     println!("Cannot set conductor IOR based on reflectance");
                     return self.error_material;
                 }
-                let ior_re = self.spectrum_property(&props, "eta", 1.0, false).unwrap();
-                let ior_im = self.spectrum_property(&props, "k", 1.0, false).unwrap();
+                let ior_re = self
+                    .spectrum_property(&props, "eta", 1.0, false)
+                    .unwrap_or(self.scene.named_spectra["metal-Cu-eta"]);
+                let ior_im = self
+                    .spectrum_property(&props, "k", 1.0, false)
+                    .unwrap_or(self.scene.named_spectra["metal-Cu-k"]);
                 let roughness = self
                     .texture_property(&props, "roughness")
                     .unwrap_or_else(|| {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
 use std::path::Path;
@@ -17,6 +18,8 @@ pub struct SpectrumData {
     pub cie_z: Box<TableSpectrum>,
     pub d65: Box<TableSpectrum>,
 
+    pub iors: HashMap<&'static str, Vec<[f32; 2]>>,
+
     pub rgb_coeffs: Vec<[f32; 4]>,
 }
 
@@ -27,6 +30,57 @@ pub fn load_data() -> Result<SpectrumData, Box<dyn Error>> {
     // scale D65 to 1 nit brightness.
     // standard D65 is scaled such that int(D65*Y) = 100 when Y is scaled to have integral 1
     let [d65] = load_spectrum("spectrum/CIE_std_illum_D65.csv", 1.0 / (y_int * 100.0))?;
+
+    let mut iors = HashMap::new();
+
+    let data = annotate_path("spectrum/metal-Ag-Rakic-BB.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-Ag-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-Ag-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-Au-Rakic-BB.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-Au-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-Au-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-Al-Rakic-BB.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-Al-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-Al-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-Cu-Rakic-BB.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-Cu-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-Cu-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-CuZn-Querry.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-CuZn-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-CuZn-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-MgO-Synowicki.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-MgO-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-MgO-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/metal-TiO2-Zhukovsky.csv".as_ref(), load_csv::<2>)?;
+    iors.insert("metal-TiO2-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
+    iors.insert("metal-TiO2-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
+
+    let data = annotate_path("spectrum/glass-BK7-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-BK7", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-FK51A-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-FK51A", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-BAF10-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-BAF10", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-LASF9-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-LASF9", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-SF5-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-F5", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-SF10-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-F10", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
+
+    let data = annotate_path("spectrum/glass-SF11-SCHOTT.csv".as_ref(), load_csv::<1>)?;
+    iors.insert("glass-F11", data.iter().map(|&(wl, [eta])| [wl, eta]).collect());
 
     let rgb_cache_path = ".rgbcache";
     let rgb_coeffs = std::fs::File::open(rgb_cache_path)
@@ -49,6 +103,7 @@ pub fn load_data() -> Result<SpectrumData, Box<dyn Error>> {
         cie_y,
         cie_z,
         d65,
+        iors,
         rgb_coeffs,
     })
 }

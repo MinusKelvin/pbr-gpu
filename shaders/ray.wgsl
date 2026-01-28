@@ -10,6 +10,7 @@ struct RaycastResult {
     hit: bool,
     p: vec3f,
     n: vec3f,
+    ng: vec3f,
     t: f32,
     material: MaterialId,
     light: LightId,

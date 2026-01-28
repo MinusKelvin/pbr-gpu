@@ -72,7 +72,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         // spawn new ray
         let offset = copysign(10, bsdf_s.dir.z) * EPSILON * max(1, length(result.p));
-        ray.o = result.p + result.n * offset;
+        ray.o = result.p + result.ng * offset;
         ray.d = transpose(to_bsdf_frame) * bsdf_s.dir;
         specular_bounce = bsdf_s.specular;
     }

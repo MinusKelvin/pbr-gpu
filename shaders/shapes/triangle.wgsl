@@ -79,9 +79,13 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
 
     let n = normalize(cross(v1.p - v0.p, v2.p - v0.p));
 
-    let normal = select(shade_n, n, all(shade_n == vec3f()));
+    var normal = select(shade_n, n, all(shade_n == vec3f()));
 
-    return RaycastResult(true, p, normal, hit.t, MaterialId(), LightId(), uv);
+    if dot(n, normal) < 0 {
+        normal = -normal;
+    }
+
+    return RaycastResult(true, p, normal, n, hit.t, MaterialId(), LightId(), uv);
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {

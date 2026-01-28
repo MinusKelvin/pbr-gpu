@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::num::NonZero;
 use std::path::Path;
 
@@ -69,6 +70,8 @@ pub struct Scene {
     pub float_data: Vec<f32>,
 
     pub root: Option<NodeId>,
+
+    pub named_spectra: HashMap<&'static str, SpectrumId>,
 }
 
 pub enum ImageData {
@@ -83,7 +86,12 @@ impl Scene {
         this.add_table_spectrum(*builtin.cie_x);
         this.add_table_spectrum(*builtin.cie_y);
         this.add_table_spectrum(*builtin.cie_z);
-        this.add_table_spectrum(*builtin.d65);
+        let v = this.add_table_spectrum(*builtin.d65);
+        this.named_spectra.insert("stdillum-D65", v);
+        for (name, data) in &builtin.iors {
+            let v = this.add_piecewise_linear_spectrum(data);
+            this.named_spectra.insert(name, v);
+        }
         this
     }
 
