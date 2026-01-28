@@ -65,13 +65,15 @@ impl Scene {
         &mut self,
         ior_re: SpectrumId,
         ior_im: SpectrumId,
-        roughness: TextureId,
+        u_roughness: TextureId,
+        v_roughness: TextureId,
     ) -> MaterialId {
         let id = MaterialId::new(MaterialType::Conductor, self.conductor_mat.len());
         self.conductor_mat.push(ConductorMaterial {
             ior_re,
             ior_im,
-            roughness,
+            u_roughness,
+            v_roughness,
         });
         id
     }
@@ -95,5 +97,6 @@ pub struct DiffuseTransmitMaterial {
 pub struct ConductorMaterial {
     pub ior_re: SpectrumId,
     pub ior_im: SpectrumId,
-    pub roughness: TextureId,
+    pub u_roughness: TextureId,
+    pub v_roughness: TextureId,
 }

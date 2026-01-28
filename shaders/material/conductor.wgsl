@@ -3,11 +3,14 @@
 #import /spectrum.wgsl
 #import /util/distr.wgsl
 #import /util/misc.wgsl
+#import /util/spherical.wgsl
+#import trowbridge_reitz.wgsl
 
 struct ConductorMaterial {
     ior_re: SpectrumId,
     ior_im: SpectrumId,
-    roughness: TextureId,
+    roughness_u: TextureId,
+    roughness_v: TextureId,
 }
 
 fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavelengths) -> Bsdf {
@@ -15,26 +18,84 @@ fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavel
     bsdf.id = BSDF_CONDUCTOR;
     bsdf.v0 = spectrum_sample(material.ior_re, wl);
     bsdf.v1 = -spectrum_sample(material.ior_im, wl);
-    bsdf.v2.x = texture_evaluate(material.roughness, uv, wl).x;
+    bsdf.v2.x = texture_evaluate(material.roughness_u, uv, wl).x;
+    bsdf.v2.y = texture_evaluate(material.roughness_v, uv, wl).x;
+    bsdf.v2 = vec4f(vec2f(length(bsdf.v2.xy)), 0, 0);
     return bsdf;
 }
 
 fn bsdf_conductor_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
-    // todo microfacet model
-    return vec4f();
-}
+    if wi.z * wo.z < 0 {
+        return vec4f();
+    }
 
-fn bsdf_conductor_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
-    // todo microfacet model
-    let cos_theta = abs(wo.z);
-    let new_dir = vec3f(-wo.xy, wo.z);
+    let alpha = bsdf.v2.xy;
+
+    if trowbridge_reitz_is_smooth(alpha) {
+        return vec4f();
+    }
+
+    let cos_theta_o = abs_cos_theta(wo);
+    let cos_theta_i = abs_cos_theta(wi);
+    if cos_theta_i == 0 || cos_theta_o == 0 {
+        return vec4f();
+    }
+
+    let nm = normalize(wi + wo);
+
+    let cos_theta = abs(dot(wo, nm));
     let f = vec4f(
         fresnel_complex(cos_theta, vec2f(bsdf.v0.x, bsdf.v1.x)),
         fresnel_complex(cos_theta, vec2f(bsdf.v0.y, bsdf.v1.y)),
         fresnel_complex(cos_theta, vec2f(bsdf.v0.z, bsdf.v1.z)),
         fresnel_complex(cos_theta, vec2f(bsdf.v0.w, bsdf.v1.w)),
-    ) / cos_theta;
-    return BsdfSample(f, new_dir, 1, true);
+    );
+
+    return f
+        * trowbridge_reitz_ndf(alpha, nm)
+        * trowbridge_reitz_masking_shadowing(alpha, wi, wo)
+        / (4 * cos_theta_i * cos_theta_o);
+}
+
+fn bsdf_conductor_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
+    let alpha = bsdf.v2.xy;
+    if trowbridge_reitz_is_smooth(alpha) {
+        let cos_theta = abs_cos_theta(wo);
+        let new_dir = vec3f(-wo.xy, wo.z);
+        let f = vec4f(
+            fresnel_complex(cos_theta, vec2f(bsdf.v0.x, bsdf.v1.x)),
+            fresnel_complex(cos_theta, vec2f(bsdf.v0.y, bsdf.v1.y)),
+            fresnel_complex(cos_theta, vec2f(bsdf.v0.z, bsdf.v1.z)),
+            fresnel_complex(cos_theta, vec2f(bsdf.v0.w, bsdf.v1.w)),
+        ) / cos_theta;
+        return BsdfSample(f, new_dir, 1, true);
+    }
+
+    let nm = trowbridge_reitz_sample(alpha, wo, random.xy);
+    let wi = -reflect(wo, nm);
+    if wi.z * wo.z < 0 {
+        return BsdfSample();
+    }
+    let pdf = trowbridge_reitz_visible_ndf(alpha, wo, nm)
+        / (4 * abs(dot(wo, nm)));
+
+    let cos_theta_o = abs_cos_theta(wo);
+    let cos_theta_i = abs_cos_theta(wi);
+
+    let cos_theta = abs(dot(wo, nm));
+    let fr = vec4f(
+        fresnel_complex(cos_theta, vec2f(bsdf.v0.x, bsdf.v1.x)),
+        fresnel_complex(cos_theta, vec2f(bsdf.v0.y, bsdf.v1.y)),
+        fresnel_complex(cos_theta, vec2f(bsdf.v0.z, bsdf.v1.z)),
+        fresnel_complex(cos_theta, vec2f(bsdf.v0.w, bsdf.v1.w)),
+    );
+
+    let f = fr
+        * trowbridge_reitz_ndf(alpha, nm)
+        * trowbridge_reitz_masking_shadowing(alpha, wi, wo)
+        / (4 * cos_theta_i * cos_theta_o);
+
+    return BsdfSample(f, wi, pdf, false);
 }
 
 fn fresnel_complex(cos_theta: f32, ior: vec2f) -> f32 {
