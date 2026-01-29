@@ -432,11 +432,12 @@ impl SceneBuilder {
                 let ior_im = self
                     .spectrum_property(&props, "k", 1.0, false)
                     .unwrap_or(self.scene.named_spectra["metal-Cu-k"]);
+
                 let u_roughness = self.texture_property(&props, "uroughness");
-                let v_roughness = self.texture_property(&props, "uroughness");
+                let v_roughness = self.texture_property(&props, "vroughness");
                 let (u_roughness, v_roughness) = u_roughness
                     .zip(v_roughness)
-                    .inspect(|_| println!("Note: anisotropic roughness current not supported"))
+                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
                     .unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
@@ -449,6 +450,29 @@ impl SceneBuilder {
 
                 self.scene
                     .add_conductor_material(ior_re, ior_im, u_roughness, v_roughness)
+            }
+            "dielectric" => {
+                let ior = self
+                    .spectrum_property(&props, "eta", 1.0, false)
+                    .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
+
+                let u_roughness = self.texture_property(&props, "uroughness");
+                let v_roughness = self.texture_property(&props, "vroughness");
+                let (u_roughness, v_roughness) = u_roughness
+                    .zip(v_roughness)
+                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
+                    .unwrap_or_else(|| {
+                        let roughness =
+                            self.texture_property(&props, "roughness")
+                                .unwrap_or_else(|| {
+                                    let spec = self.scene.add_constant_spectrum(0.0);
+                                    self.scene.add_constant_texture(spec)
+                                });
+                        (roughness, roughness)
+                    });
+
+                self.scene
+                    .add_dielectric_material(ior, u_roughness, v_roughness)
             }
             _ => {
                 println!("Unrecognized material type {ty}");

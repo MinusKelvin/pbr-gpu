@@ -4,7 +4,7 @@
 #import /material.wgsl
 #import /light.wgsl
 
-const MAX_DEPTH = 25;
+const MAX_DEPTH = 250;
 
 fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
@@ -13,6 +13,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var ray = ray_;
 
     var specular_bounce = false;
+    var secondary_terminated = false;
 
     var depth = 0;
     while any(throughput > vec4f()) {
@@ -38,6 +39,11 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         let bsdf = material_evaluate(result.material, result.uv, wl);
+
+        if !secondary_terminated && bsdf_terminates_secondary_wavelengths(bsdf) {
+            secondary_terminated = true;
+            throughput *= vec4f(4, 0, 0, 0);
+        }
 
         // construct shading coordinate system
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));

@@ -53,6 +53,7 @@ pub struct Scene {
     pub diffuse_mat: Vec<DiffuseMaterial>,
     pub diffuse_transmit_mat: Vec<DiffuseTransmitMaterial>,
     pub conductor_mat: Vec<ConductorMaterial>,
+    pub dielectric_mat: Vec<DielectricMaterial>,
 
     pub infinite_lights: Vec<LightId>,
 
@@ -127,6 +128,7 @@ impl Scene {
                 storage_buffer_entry(96),
                 storage_buffer_entry(97),
                 storage_buffer_entry(98),
+                storage_buffer_entry(99),
                 storage_buffer_entry(128),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
@@ -167,6 +169,7 @@ impl Scene {
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
         let conductor_mat = make_buffer(device, &self.conductor_mat);
+        let dielectric_mat = make_buffer(device, &self.dielectric_mat);
 
         let infinite_lights = make_buffer(device, &self.infinite_lights);
 
@@ -263,6 +266,7 @@ impl Scene {
                 make_entry(96, &diffuse_mat),
                 make_entry(97, &diffuse_transmit_mat),
                 make_entry(98, &conductor_mat),
+                make_entry(99, &dielectric_mat),
                 make_entry(128, &infinite_lights),
                 make_entry(130, &uniform_lights),
                 make_entry(131, &image_lights),
