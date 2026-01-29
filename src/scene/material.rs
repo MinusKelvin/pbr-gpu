@@ -50,6 +50,7 @@ impl Scene {
         &mut self,
         reflectance: TextureId,
         transmittance: TextureId,
+        scale: TextureId,
     ) -> MaterialId {
         let id = MaterialId::new(
             MaterialType::DiffuseTransmit,
@@ -58,6 +59,7 @@ impl Scene {
         self.diffuse_transmit_mat.push(DiffuseTransmitMaterial {
             reflectance,
             transmittance,
+            scale,
         });
         id
     }
@@ -106,6 +108,7 @@ pub struct DiffuseMaterial {
 pub struct DiffuseTransmitMaterial {
     pub reflectance: TextureId,
     pub transmittance: TextureId,
+    pub scale: TextureId,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]

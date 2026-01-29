@@ -55,7 +55,7 @@ impl Scene {
     }
 
     pub fn add_float_image_texture(&mut self, image: u32) -> TextureId {
-        let id = TextureId::new(TextureType::ImageFloat, self.image_rgb_tex.len());
+        let id = TextureId::new(TextureType::ImageFloat, self.image_float_tex.len());
         self.image_float_tex.push(ImageFloatTexture { image });
         id
     }

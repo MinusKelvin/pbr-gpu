@@ -4,6 +4,8 @@ use std::path::Path;
 
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
+use image::DynamicImage;
+use image::GenericImageView;
 use image::ImageBuffer;
 use image::Luma;
 use image::Pixel;
@@ -290,6 +292,13 @@ impl Scene {
         };
         let id = self.images.len() as u32;
         self.images.push(match img.as_flat_samples_f32().is_some() {
+            _ if float && img.has_alpha() => {
+                let data = img.to_luma_alpha32f();
+                let data = ImageBuffer::from_fn(img.width(), img.height(), |x, y| {
+                    Luma([data.get_pixel(x, y).alpha()])
+                });
+                ImageData::Float(data)
+            }
             _ if float => ImageData::Float(img.to_luma32f()),
             true => ImageData::FloatRgb(img.to_rgba32f()),
             false => ImageData::Srgb(img.to_rgba8()),

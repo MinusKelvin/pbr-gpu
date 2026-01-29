@@ -5,7 +5,7 @@ use glam::Vec3;
 use rayon::prelude::*;
 
 use crate::Transform;
-use crate::scene::{Bounds, LightId, MaterialId, Scene, ShapeId};
+use crate::scene::{Bounds, LightId, MaterialId, Scene, ShapeId, TextureId};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -183,4 +183,5 @@ pub struct PrimitiveNode {
     pub shape: ShapeId,
     pub material: MaterialId,
     pub light: LightId,
+    pub alpha: TextureId,
 }

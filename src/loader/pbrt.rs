@@ -418,8 +418,14 @@ impl SceneBuilder {
                         let spec = self.scene.add_constant_spectrum(0.25);
                         self.scene.add_constant_texture(spec)
                     });
+                let scale = self.texture_property(&props, "scale")
+                    .unwrap_or_else(|| {
+                        let spec = self.scene.add_constant_spectrum(1.0);
+                        self.scene.add_constant_texture(spec)
+                    });
+
                 self.scene
-                    .add_diffuse_transmit_material(reflectance, transmittance)
+                    .add_diffuse_transmit_material(reflectance, transmittance, scale)
             }
             "conductor" => {
                 if props.type_of("reflectance").is_some() {
@@ -556,10 +562,13 @@ impl SceneBuilder {
             None => LightId::ZERO,
         };
 
+        let one = self.scene.add_constant_spectrum(1.0);
+        let one = self.scene.add_constant_texture(one);
         let primitive = self.scene.add_primitive(PrimitiveNode {
             shape: shape_id,
             material: self.state.material,
             light,
+            alpha: one,
         });
         let transformed = self.scene.add_transform(
             Transform {
@@ -582,9 +591,10 @@ impl SceneBuilder {
             println!("Creating mesh with transform which swaps handedness");
         }
 
-        if props.type_of("alpha").is_some() {
-            println!("Node: alpha is not currently supported on triangles");
-        }
+        let alpha = self.texture_property(&props, "alpha").unwrap_or_else(|| {
+            let one = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(one)
+        });
 
         let indices = props
             .get_uint_list("indices")
@@ -623,7 +633,7 @@ impl SceneBuilder {
             .collect::<Vec<_>>();
 
         let iter = self.scene.add_triangles(&verts, &tris);
-        self.create_primitives(iter);
+        self.create_primitives(alpha, iter);
     }
 
     fn loop_subdivision_surface(&mut self, props: Props) {
@@ -641,6 +651,11 @@ impl SceneBuilder {
             println!("Note: plymesh tessellation displacement map will not be applied.");
         }
 
+        let alpha = self.texture_property(&props, "alpha").unwrap_or_else(|| {
+            let one = self.scene.add_constant_spectrum(1.0);
+            self.scene.add_constant_texture(one)
+        });
+
         match path.extension().and_then(OsStr::to_str) {
             Some("gz") => {
                 let iter = super::ply::load_plymesh(
@@ -648,7 +663,7 @@ impl SceneBuilder {
                     &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
                     self.state.transform,
                 );
-                self.create_primitives(iter);
+                self.create_primitives(alpha, iter);
             }
             _ => {
                 let iter = super::ply::load_plymesh(
@@ -656,7 +671,7 @@ impl SceneBuilder {
                     &mut BufReader::new(File::open(path).unwrap()),
                     self.state.transform,
                 );
-                self.create_primitives(iter);
+                self.create_primitives(alpha, iter);
             }
         };
     }
@@ -665,7 +680,7 @@ impl SceneBuilder {
         println!("Unrecognized shape type {ty}");
     }
 
-    fn create_primitives(&mut self, shapes: impl Iterator<Item = ShapeId>) {
+    fn create_primitives(&mut self, alpha: TextureId, shapes: impl Iterator<Item = ShapeId>) {
         self.current_prims.extend(shapes.map(|shape| {
             let light = match self.state.area_light {
                 Some(rgb) => self.scene.add_area_light(shape, rgb),
@@ -675,6 +690,7 @@ impl SceneBuilder {
                 shape,
                 material: self.state.material,
                 light,
+                alpha,
             })
         }));
     }

@@ -77,12 +77,12 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         + hit.b.y * vec2(v1.u, v1.v)
         + hit.b.z * vec2(v2.u, v2.v);
 
-    let n = normalize(cross(v1.p - v0.p, v2.p - v0.p));
+    var n = normalize(cross(v1.p - v0.p, v2.p - v0.p));
 
     var normal = select(shade_n, n, all(shade_n == vec3f()));
 
     if dot(n, normal) < 0 {
-        normal = -normal;
+        n = -n;
     }
 
     return RaycastResult(true, p, normal, n, hit.t, MaterialId(), LightId(), uv);

@@ -308,7 +308,8 @@ fn main() -> anyhow::Result<()> {
             s / (samples - 1.0)
         };
 
-        let rel_var = Vec3::select(mean.cmpgt(Vec3::ZERO), var / mean, Vec3::ZERO);
+        let rel_var = var / mean;
+        let rel_var = Vec3::select(rel_var.is_finite_mask(), rel_var, Vec3::ZERO);
         let rel_err = rel_var / samples;
 
         avg_rel_var += rel_var.element_sum() / 3.0;
@@ -340,6 +341,9 @@ fn main() -> anyhow::Result<()> {
         mean.into_iter()
             .map(|xyza| xyz_to_srgb * xyza.xyz())
             .map(|rgb| {
+                if rgb.x.is_infinite() {
+                    dbg!(rgb);
+                }
                 let low = rgb * 12.92;
                 let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
                 Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)

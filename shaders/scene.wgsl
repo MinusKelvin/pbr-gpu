@@ -39,6 +39,7 @@ struct PrimitiveNode {
     shape: ShapeId,
     material: MaterialId,
     light: LightId,
+    alpha: TextureId,
 }
 
 struct TransformStackEntry {
@@ -118,7 +119,18 @@ fn scene_raycast(ray_: Ray) -> RaycastResult {
             }
             case NODE_PRIMITIVE {
                 let node = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK];
-                let result = shape_raycast(node.shape, ray, closest.t);
+                var result = shape_raycast(node.shape, ray, closest.t);
+                if result.hit {
+                    let alpha = texture_evaluate(node.alpha, result.uv, Wavelengths()).x;
+                    if alpha < 1 {
+                        var h = bitcast<u32>(result.t);
+                        h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.o))).w;
+                        h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.d))).w;
+                        let u = f32(h) / 4294967296;
+
+                        result.hit = u < alpha;
+                    }
+                }
                 if result.hit {
                     closest = result;
                     closest.material = node.material;
