@@ -13,10 +13,11 @@ enum MaterialType {
     DiffuseTransmit = 1 << MaterialId::TAG_SHIFT,
     Conductor = 2 << MaterialId::TAG_SHIFT,
     Dielectric = 3 << MaterialId::TAG_SHIFT,
+    ThinDielectric = 4 << MaterialId::TAG_SHIFT,
 }
 
 impl MaterialId {
-    const TAG_BITS: u32 = 2;
+    const TAG_BITS: u32 = 3;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
     const TAG_MASK: u32 = !Self::IDX_MASK;
@@ -95,6 +96,13 @@ impl Scene {
         });
         id
     }
+
+    pub fn add_thin_dielectric_material(&mut self, ior: SpectrumId) -> MaterialId {
+        let id = MaterialId::new(MaterialType::ThinDielectric, self.thin_dielectric_mat.len());
+        self.thin_dielectric_mat
+            .push(ThinDielectricMaterial { ior });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -126,4 +134,10 @@ pub struct DielectricMaterial {
     pub ior: SpectrumId,
     pub u_roughness: TextureId,
     pub v_roughness: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ThinDielectricMaterial {
+    pub ior: SpectrumId,
 }

@@ -418,11 +418,10 @@ impl SceneBuilder {
                         let spec = self.scene.add_constant_spectrum(0.25);
                         self.scene.add_constant_texture(spec)
                     });
-                let scale = self.texture_property(&props, "scale")
-                    .unwrap_or_else(|| {
-                        let spec = self.scene.add_constant_spectrum(1.0);
-                        self.scene.add_constant_texture(spec)
-                    });
+                let scale = self.texture_property(&props, "scale").unwrap_or_else(|| {
+                    let spec = self.scene.add_constant_spectrum(1.0);
+                    self.scene.add_constant_texture(spec)
+                });
 
                 self.scene
                     .add_diffuse_transmit_material(reflectance, transmittance, scale)
@@ -479,6 +478,13 @@ impl SceneBuilder {
 
                 self.scene
                     .add_dielectric_material(ior, u_roughness, v_roughness)
+            }
+            "thindielectric" => {
+                let ior = self
+                    .spectrum_property(&props, "eta", 1.0, false)
+                    .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
+
+                self.scene.add_thin_dielectric_material(ior)
             }
             _ => {
                 println!("Unrecognized material type {ty}");

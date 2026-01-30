@@ -4,6 +4,7 @@
 #import material/diffuse_transmit.wgsl
 #import material/conductor.wgsl
 #import material/dielectric.wgsl
+#import material/thin_dielectric.wgsl
 
 @group(0) @binding(96)
 var<storage> DIFFUSE_MATERIALS: array<DiffuseMaterial>;
@@ -13,12 +14,14 @@ var<storage> DIFFUSE_TRANSMIT_MATERIALS: array<DiffuseTransmitMaterial>;
 var<storage> CONDUCTOR_MATERIALS: array<ConductorMaterial>;
 @group(0) @binding(99)
 var<storage> DIELECTRIC_MATERIALS: array<DielectricMaterial>;
+@group(0) @binding(100)
+var<storage> THIN_DIELECTRIC_MATERIALS: array<ThinDielectricMaterial>;
 
 struct MaterialId {
     id: u32,
 }
 
-const MATERIAL_TAG_BITS: u32 = 2;
+const MATERIAL_TAG_BITS: u32 = 3;
 const MATERIAL_TAG_SHIFT: u32 = 32 - MATERIAL_TAG_BITS;
 const MATERIAL_IDX_MASK: u32 = (1 << MATERIAL_TAG_SHIFT) - 1;
 const MATERIAL_TAG_MASK: u32 = ~MATERIAL_IDX_MASK;
@@ -27,6 +30,7 @@ const MATERIAL_DIFFUSE: u32 = 0 << MATERIAL_TAG_SHIFT;
 const MATERIAL_DIFFUSE_TRANSMIT: u32 = 1 << MATERIAL_TAG_SHIFT;
 const MATERIAL_CONDUCTOR: u32 = 2 << MATERIAL_TAG_SHIFT;
 const MATERIAL_DIELECTRIC: u32 = 3 << MATERIAL_TAG_SHIFT;
+const MATERIAL_THIN_DIELECTRIC: u32 = 4 << MATERIAL_TAG_SHIFT;
 
 struct Bsdf {
     id: u32,
@@ -39,6 +43,7 @@ const BSDF_DIFFUSE: u32 = 1;
 const BSDF_DIFFUSE_TRANSMIT: u32 = 2;
 const BSDF_CONDUCTOR: u32 = 3;
 const BSDF_DIELECTRIC: u32 = 4;
+const BSDF_THIN_DIELECTRIC: u32 = 5;
 
 struct BsdfSample {
     f: vec4f,
@@ -62,6 +67,9 @@ fn material_evaluate(material: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
         case MATERIAL_DIELECTRIC {
             return material_dielectric_evaluate(DIELECTRIC_MATERIALS[idx], uv, wl);
         }
+        case MATERIAL_THIN_DIELECTRIC {
+            return material_thin_dielectric_evaluate(THIN_DIELECTRIC_MATERIALS[idx], uv, wl);
+        }
         default {
             return Bsdf();
         }
@@ -69,7 +77,8 @@ fn material_evaluate(material: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
 }
 
 fn bsdf_terminates_secondary_wavelengths(bsdf: Bsdf) -> bool {
-    return bsdf.id == BSDF_DIELECTRIC && any(bsdf.v0 != vec4f(bsdf.v0.x));
+    return bsdf.id == BSDF_DIELECTRIC && any(bsdf.v0 != vec4f(bsdf.v0.x))
+        || bsdf.id == BSDF_THIN_DIELECTRIC && any(bsdf.v0 != vec4f(bsdf.v0.x));
 }
 
 fn bsdf_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
@@ -85,6 +94,9 @@ fn bsdf_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
         }
         case BSDF_DIELECTRIC {
             return bsdf_dielectric_f(bsdf, wo, wi);
+        }
+        case BSDF_THIN_DIELECTRIC {
+            return bsdf_thin_dielectric_f(bsdf, wo, wi);
         }
         default {
             return vec4f();
@@ -102,6 +114,9 @@ fn bsdf_sample(bsdf: Bsdf, wi: vec3f, random: vec3f) -> BsdfSample {
         }
         case BSDF_DIELECTRIC {
             return bsdf_dielectric_sample(bsdf, wi, random);
+        }
+        case BSDF_THIN_DIELECTRIC {
+            return bsdf_thin_dielectric_sample(bsdf, wi, random);
         }
         default {
             // this is also the BSDF_DIFFUSE_TRANSMIT case
