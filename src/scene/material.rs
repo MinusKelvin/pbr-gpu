@@ -14,6 +14,7 @@ enum MaterialType {
     Conductor = 2 << MaterialId::TAG_SHIFT,
     Dielectric = 3 << MaterialId::TAG_SHIFT,
     ThinDielectric = 4 << MaterialId::TAG_SHIFT,
+    MetallicWorkflow = 5 << MaterialId::TAG_SHIFT,
 }
 
 impl MaterialId {
@@ -103,6 +104,26 @@ impl Scene {
             .push(ThinDielectricMaterial { ior });
         id
     }
+
+    pub fn add_metallic_workflow_material(
+        &mut self,
+        base_color: TextureId,
+        metallic: TextureId,
+        u_roughness: TextureId,
+        v_roughness: TextureId,
+    ) -> MaterialId {
+        let id = MaterialId::new(
+            MaterialType::MetallicWorkflow,
+            self.metallic_workflow_mat.len(),
+        );
+        self.metallic_workflow_mat.push(MetallicWorkflowMaterial {
+            base_color,
+            metallic,
+            u_roughness,
+            v_roughness,
+        });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -140,4 +161,13 @@ pub struct DielectricMaterial {
 #[repr(C)]
 pub struct ThinDielectricMaterial {
     pub ior: SpectrumId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct MetallicWorkflowMaterial {
+    pub base_color: TextureId,
+    pub metallic: TextureId,
+    pub u_roughness: TextureId,
+    pub v_roughness: TextureId,
 }

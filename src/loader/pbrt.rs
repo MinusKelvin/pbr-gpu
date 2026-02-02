@@ -379,8 +379,12 @@ impl SceneBuilder {
     fn make_material(&mut self, ty: &str, props: Props) -> MaterialId {
         match ty {
             "coateddiffuse" => {
-                println!("Note: coateddiffuse material will be completely diffuse");
-                self.make_material("diffuse", props)
+                if props.type_of("albedo").is_some() || props.type_of("thickness").is_some() {
+                    println!(
+                        "Note: coateddiffuse material defers to metallicworkflow, which does not support intervening volumetric media"
+                    );
+                }
+                self.make_material("metallicworkflow", props)
             }
             "coatedconductor" => {
                 println!("Note: coatedconductor material will be regular conductor");
@@ -485,6 +489,43 @@ impl SceneBuilder {
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
 
                 self.scene.add_thin_dielectric_material(ior)
+            }
+            "metallicworkflow" => {
+                let base_color =
+                    self.texture_property(&props, "reflectance")
+                        .unwrap_or_else(|| {
+                            let spec = self.scene.add_constant_spectrum(0.5);
+                            self.scene.add_constant_texture(spec)
+                        });
+
+                let metallic = self
+                    .texture_property(&props, "metallic")
+                    .unwrap_or_else(|| {
+                        let spec = self.scene.add_constant_spectrum(0.0);
+                        self.scene.add_constant_texture(spec)
+                    });
+
+                let u_roughness = self.texture_property(&props, "uroughness");
+                let v_roughness = self.texture_property(&props, "vroughness");
+                let (u_roughness, v_roughness) = u_roughness
+                    .zip(v_roughness)
+                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
+                    .unwrap_or_else(|| {
+                        let roughness =
+                            self.texture_property(&props, "roughness")
+                                .unwrap_or_else(|| {
+                                    let spec = self.scene.add_constant_spectrum(0.0);
+                                    self.scene.add_constant_texture(spec)
+                                });
+                        (roughness, roughness)
+                    });
+
+                self.scene.add_metallic_workflow_material(
+                    base_color,
+                    metallic,
+                    u_roughness,
+                    v_roughness,
+                )
             }
             _ => {
                 println!("Unrecognized material type {ty}");
