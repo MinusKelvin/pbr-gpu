@@ -77,7 +77,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         // spawn new ray
-        let offset = 10 * EPSILON * max(1, length(result.p));
+        let offset = 10 * EPSILON * (1 + length(result.p));
         ray.d = transpose(to_bsdf_frame) * bsdf_s.dir;
         ray.o = result.p + ray.d * offset;
         specular_bounce = bsdf_s.specular;
@@ -110,7 +110,7 @@ fn _sample_direct_light(
     }
 
     var ray = ray_;
-    let offset = copysign(10, new_dir.z) * EPSILON * max(1, length(hit.p));
+    let offset = 10 * EPSILON * (1 + length(hit.p));
     ray.d = light_sample.dir;
     ray.o = hit.p + ray.d * offset;
 

@@ -69,7 +69,7 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         + hit.b.y * v1.p
         + hit.b.z * v2.p;
 
-    let shade_n = hit.b.x * v0.n
+    var n_shade = hit.b.x * v0.n
         + hit.b.y * v1.n
         + hit.b.z * v2.n;
 
@@ -77,15 +77,18 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         + hit.b.y * vec2(v1.u, v1.v)
         + hit.b.z * vec2(v2.u, v2.v);
 
-    var n = normalize(cross(v1.p - v0.p, v2.p - v0.p));
+    var n_geo = normalize(cross(v1.p - v0.p, v2.p - v0.p));
 
-    var normal = select(shade_n, n, all(shade_n == vec3f()));
-
-    if dot(n, normal) < 0 {
-        n = -n;
+    if all(n_shade == vec3f()) {
+        n_shade = n_geo;
+    } else {
+        n_shade = normalize(n_shade);
+        if dot(n_geo, n_shade) < 0 {
+            n_geo = -n_geo;
+        }
     }
 
-    return RaycastResult(true, p, normal, n, hit.t, MaterialId(), LightId(), uv);
+    return RaycastResult(true, p, n_shade, n_geo, hit.t, MaterialId(), LightId(), uv);
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {
