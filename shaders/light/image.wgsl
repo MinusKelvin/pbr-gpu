@@ -20,7 +20,7 @@ fn inf_light_image_emission(light: ImageLight, ray_: Ray, wl: Wavelengths) -> ve
     return spectrum_rgb_illuminant_sample(spectrum, wl) * light.scale;
 }
 
-fn light_image_sample(light: ImageLight, wl: Wavelengths, random: vec2f) -> LightSample {
+fn light_image_sample(light: ImageLight, p: vec3f, wl: Wavelengths, random: vec2f) -> LightSample {
     let uv = sample_table_2d(light.samp, random);
     let dir = transform_vector(light.transform, equal_area_square_to_dir(uv.value));
 
@@ -29,5 +29,5 @@ fn light_image_sample(light: ImageLight, wl: Wavelengths, random: vec2f) -> Ligh
     let spectrum = RgbIlluminantSpectrum(rgb, SPECTRUM_D65_1NIT);
     let emission = spectrum_rgb_illuminant_sample(spectrum, wl) * light.scale;
 
-    return LightSample(emission, dir, uv.pdf / (2 * TWO_PI));
+    return LightSample(emission, dir, FLOAT_MAX, uv.pdf / (2 * TWO_PI));
 }

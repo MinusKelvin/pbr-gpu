@@ -140,3 +140,38 @@ fn triangle_ray_transform(ray: Ray) -> mat4x4f {
 
     return shear * permute * translate;
 }
+
+fn triangle_sample(tri: Triangle, _p: vec3f, random: vec2f) -> ShapeSample {
+    let v0 = TRI_VERTICES[tri.v0];
+    let v1 = TRI_VERTICES[tri.v1];
+    let v2 = TRI_VERTICES[tri.v2];
+
+    // better distribution than mirroring across y=1-x wrt low-discrepancy sampling (via pbr-book)
+    var b: vec3f;
+    if random.x < random.y {
+        b.x = random.x / 2;
+        b.y = random.y - b.x;
+    } else {
+        b.y = random.y / 2;
+        b.x = random.x - b.y;
+    }
+    b.z = 1 - b.x - b.y;
+
+    let p = b.x * v0.p
+        + b.y * v1.p
+        + b.z * v2.p;
+
+    var n_shade = b.x * v0.n
+        + b.y * v1.n
+        + b.z * v2.n;
+
+    let d = cross(v1.p - v0.p, v2.p - v0.p);
+    let area = length(d) / 2;
+    var n_geo = normalize(d);
+
+    if dot(n_geo, n_shade) < 0 {
+        n_geo = -n_geo;
+    }
+
+    return ShapeSample(p, n_geo, 1 / area);
+}

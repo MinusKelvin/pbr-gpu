@@ -14,7 +14,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     var depth = 0;
     while any(throughput > vec4f()) {
-        let result = scene_raycast(ray);
+        let result = scene_raycast(ray, FLOAT_MAX);
 
         if !result.hit {
             // add infinite lights and finish

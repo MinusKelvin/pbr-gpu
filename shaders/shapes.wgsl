@@ -33,3 +33,24 @@ fn shape_raycast(shape: ShapeId, ray: Ray, t_max: f32) -> RaycastResult {
         }
     }
 }
+
+struct ShapeSample {
+    p: vec3f,
+    ng: vec3f,
+    pdf_wrt_area: f32,
+}
+
+fn shape_sample(shape: ShapeId, p: vec3f, random: vec2f) -> ShapeSample {
+    switch shape.id & SHAPE_TAG_MASK {
+        case SHAPE_SPHERE {
+            return sphere_sample(SPHERES[shape.id & SHAPE_IDX_MASK], p, random);
+        }
+        case SHAPE_TRIANGLE {
+            return triangle_sample(TRIANGLES[shape.id & SHAPE_IDX_MASK], p, random);
+        }
+        default {
+            // unreachable
+            return ShapeSample();
+        }
+    }
+}

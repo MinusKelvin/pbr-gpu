@@ -5,6 +5,7 @@
 #import /light.wgsl
 
 const MAX_DEPTH = 250;
+const DO_LIGHT_SAMPLING = true;
 
 fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
@@ -17,11 +18,11 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     var depth = 0;
     while any(throughput > vec4f()) {
-        let result = scene_raycast(ray);
+        let result = scene_raycast(ray, FLOAT_MAX);
 
         if !result.hit {
             // add infinite lights and finish
-            if depth == 0 || specular_bounce {
+            if depth == 0 || specular_bounce || !DO_LIGHT_SAMPLING {
                 for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
                     radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
                 }
@@ -30,7 +31,9 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         // add light emitted by surface
-        radiance += throughput * light_emission(result.light, result, wl);
+        if depth == 0 || specular_bounce || !DO_LIGHT_SAMPLING {
+            radiance += throughput * light_emission(result.light, ray, result, wl);
+        }
 
         // enforce termination
         depth += 1;
@@ -49,15 +52,17 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));
         let old_dir = to_bsdf_frame * -ray.d;
 
-        // sample direct lighting
-        radiance += throughput * _sample_direct_light(
-            bsdf,
-            to_bsdf_frame,
-            old_dir,
-            result,
-            ray,
-            wl,
-        );
+        if DO_LIGHT_SAMPLING {
+            // sample direct lighting
+            radiance += throughput * _sample_direct_light(
+                bsdf,
+                to_bsdf_frame,
+                old_dir,
+                result,
+                ray,
+                wl,
+            );
+        }
 
         // sample bsdf
         let bsdf_s = bsdf_sample(bsdf, old_dir, vec3f(sample_2d(), sample_1d()));
@@ -94,7 +99,7 @@ fn _sample_direct_light(
     ray_: Ray,
     wl: Wavelengths,
 ) -> vec4f {
-    let light_sample = light_sampler_sample(wl, vec3f(sample_2d(), sample_1d()));
+    let light_sample = light_sampler_sample(hit.p, wl, vec3f(sample_2d(), sample_1d()));
     if light_sample.pdf_wrt_solid_angle == 0 {
         return vec4f();
     }
@@ -114,7 +119,7 @@ fn _sample_direct_light(
     ray.d = light_sample.dir;
     ray.o = hit.p + ray.d * offset;
 
-    if scene_raycast(ray).hit {
+    if scene_raycast(ray, light_sample.t_max - offset - 0.0001).hit {
         return vec4f();
     }
 

@@ -78,3 +78,7 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
         vec2f(),
     );
 }
+
+fn sphere_sample(sphere: Sphere, p: vec3f, random: vec2f) -> ShapeSample {
+    return ShapeSample();
+}

@@ -47,9 +47,9 @@ struct TransformStackEntry {
     idx: u32,
 }
 
-fn scene_raycast(ray_: Ray) -> RaycastResult {
+fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
     var closest: RaycastResult;
-    closest.t = FLOAT_MAX;
+    closest.t = max_t;
 
     var ray = ray_;
     var inv_ray_dir = 1 / ray.d;

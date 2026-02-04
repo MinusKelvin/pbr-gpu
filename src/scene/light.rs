@@ -46,6 +46,7 @@ impl Scene {
     pub fn add_uniform_light(&mut self, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Uniform, self.uniform_lights.len());
         self.infinite_lights.push(id);
+        self.all_lights.push(id);
         self.uniform_lights.push(UniformLight { spectrum });
         id
     }
@@ -53,16 +54,19 @@ impl Scene {
     pub fn add_image_light(&mut self, light: ImageLight) -> LightId {
         let id = LightId::new(LightType::Image, self.image_lights.len());
         self.infinite_lights.push(id);
+        self.all_lights.push(id);
         self.image_lights.push(light);
         id
     }
 
     pub fn add_area_light(&mut self, shape: ShapeId, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Area, self.area_lights.len());
+        self.all_lights.push(id);
         self.area_lights.push(AreaLight {
             spectrum,
             transform_node: NodeId::ZERO,
             shape,
+            two_sided: false as u32,
         });
         id
     }
@@ -94,4 +98,5 @@ pub struct AreaLight {
     pub spectrum: SpectrumId,
     pub transform_node: NodeId,
     pub shape: ShapeId,
+    pub two_sided: u32,
 }

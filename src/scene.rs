@@ -67,6 +67,7 @@ pub struct Scene {
     pub metallic_workflow_mat: Vec<MetallicWorkflowMaterial>,
 
     pub infinite_lights: Vec<LightId>,
+    pub all_lights: Vec<LightId>,
 
     pub uniform_lights: Vec<UniformLight>,
     pub image_lights: Vec<ImageLight>,
@@ -107,6 +108,16 @@ impl Scene {
         this
     }
 
+    pub fn workaround_empty_buffer_nonsense(&mut self) {
+        if self.infinite_lights.is_empty() {
+            let zero = self.add_constant_spectrum(0.0);
+            self.add_uniform_light(zero);
+            if self.all_lights.len() > 1 {
+                self.all_lights.pop();
+            }
+        }
+    }
+
     pub fn make_bind_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene"),
@@ -143,6 +154,7 @@ impl Scene {
                 storage_buffer_entry(100),
                 storage_buffer_entry(101),
                 storage_buffer_entry(128),
+                storage_buffer_entry(129),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
                 storage_buffer_entry(132),
@@ -187,6 +199,7 @@ impl Scene {
         let metallic_workflow_mat = make_buffer(device, &self.metallic_workflow_mat);
 
         let infinite_lights = make_buffer(device, &self.infinite_lights);
+        let all_lights = make_buffer(device, &self.all_lights);
 
         let uniform_lights = make_buffer(device, &self.uniform_lights);
         let image_lights = make_buffer(device, &self.image_lights);
@@ -285,6 +298,7 @@ impl Scene {
                 make_entry(100, &thin_dielectric_mat),
                 make_entry(101, &metallic_workflow_mat),
                 make_entry(128, &infinite_lights),
+                make_entry(129, &all_lights),
                 make_entry(130, &uniform_lights),
                 make_entry(131, &image_lights),
                 make_entry(132, &area_lights),

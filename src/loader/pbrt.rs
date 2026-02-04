@@ -7,7 +7,6 @@ use std::time::Instant;
 
 use flate2::read::GzDecoder;
 use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
-use image::GenericImageView;
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
@@ -47,10 +46,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
 
-    if builder.scene.infinite_lights.is_empty() {
-        let zero = builder.scene.add_constant_spectrum(0.0);
-        builder.scene.add_uniform_light(zero);
-    }
+    builder.scene.workaround_empty_buffer_nonsense();
 
     let root = builder.scene.add_bvh(&builder.current_prims);
     builder.scene.root = Some(root);
@@ -605,7 +601,10 @@ impl SceneBuilder {
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
         let light = match self.state.area_light {
-            Some(spectrum) => self.scene.add_area_light(shape_id, spectrum),
+            Some(spectrum) => {
+                println!("Note: light sampling spheres is currently not supported");
+                self.scene.add_area_light(shape_id, spectrum)
+            }
             None => LightId::ZERO,
         };
 
