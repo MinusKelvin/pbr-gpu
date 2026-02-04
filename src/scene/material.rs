@@ -17,6 +17,7 @@ enum MaterialType {
     MetallicWorkflow = 5 << MaterialId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl MaterialId {
     const TAG_BITS: u32 = 3;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;

@@ -14,6 +14,7 @@ enum ShapeType {
     Triangle = 1 << ShapeId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl ShapeId {
     const TAG_BITS: u32 = 1;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;

@@ -18,6 +18,7 @@ enum SpectrumType {
     PiecewiseLinear = 5 << SpectrumId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl SpectrumId {
     pub const D65: SpectrumId = SpectrumId(3);
 

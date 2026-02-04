@@ -17,6 +17,7 @@ enum TextureType {
     Checkerboard = 6 << TextureId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl TextureId {
     const TAG_BITS: u32 = 3;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;

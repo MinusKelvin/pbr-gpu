@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
+use std::io::Read;
 use std::num::NonZero;
 use std::path::Path;
 
@@ -9,6 +13,7 @@ use image::GenericImageView;
 use image::ImageBuffer;
 use image::Luma;
 use image::Pixel;
+use image::Rgb32FImage;
 use image::Rgba32FImage;
 use image::RgbaImage;
 use wgpu::util::DeviceExt;
@@ -31,6 +36,8 @@ pub use self::other::*;
 pub use self::shapes::*;
 pub use self::spectra::*;
 pub use self::texture::*;
+
+type Luma32FImage = ImageBuffer<Luma<f32>, Vec<f32>>;
 
 #[derive(Default)]
 pub struct Scene {
@@ -80,7 +87,7 @@ pub struct Scene {
 }
 
 pub enum ImageData {
-    Float(ImageBuffer<Luma<f32>, Vec<f32>>),
+    Float(Luma32FImage),
     FloatRgb(Rgba32FImage),
     Srgb(RgbaImage),
 }
@@ -293,8 +300,11 @@ impl Scene {
     }
 
     pub fn add_image(&mut self, path: &Path, float: bool) -> Option<u32> {
-        let Ok(img) = image::open(path)
-            .inspect_err(|e| println!("Could not load image {}: {e}", path.display()))
+        let img = match path.extension().and_then(|s| s.to_str()) {
+            Some("pfm") => load_pfm_image(path),
+            _ => image::open(path),
+        };
+        let Ok(img) = img.inspect_err(|e| println!("Could not load image {}: {e}", path.display()))
         else {
             return None;
         };
@@ -407,4 +417,81 @@ impl Bounds {
             )
         })
     }
+}
+
+fn load_pfm_image(path: &Path) -> image::ImageResult<DynamicImage> {
+    use image::error::*;
+
+    let fmt_hint = ImageFormatHint::Name("PFM".to_string());
+
+    let mut buf_reader = BufReader::new(File::open(path)?);
+    let mut buf = String::new();
+
+    buf_reader.read_line(&mut buf)?;
+    let is_rgb = match buf.trim() {
+        "PF" => true,
+        "Pf" => false,
+        _ => {
+            return Err(ImageError::Decoding(DecodingError::new(
+                fmt_hint,
+                "invalid pfm type",
+            )));
+        }
+    };
+
+    buf.clear();
+    buf_reader.read_line(&mut buf)?;
+    let (width, height) =
+        buf.trim()
+            .split_once(' ')
+            .ok_or(ImageError::Decoding(DecodingError::new(
+                fmt_hint.clone(),
+                "expected width and height to be specified",
+            )))?;
+    let width = width
+        .parse()
+        .map_err(|e| ImageError::Decoding(DecodingError::new(fmt_hint.clone(), e)))?;
+    let height = height
+        .parse()
+        .map_err(|e| ImageError::Decoding(DecodingError::new(fmt_hint.clone(), e)))?;
+
+    buf.clear();
+    buf_reader.read_line(&mut buf)?;
+    let wack = buf
+        .trim()
+        .parse::<f32>()
+        .map_err(|e| ImageError::Decoding(DecodingError::new(fmt_hint.clone(), e)))?;
+    let is_le = match () {
+        _ if wack.is_sign_positive() => false,
+        _ if wack.is_sign_negative() => true,
+        _ => {
+            return Err(ImageError::Decoding(DecodingError::new(
+                fmt_hint,
+                "invalid byte order specifier",
+            )));
+        }
+    };
+
+    let mut data = vec![
+        0.0;
+        width as usize
+            * height as usize
+            * match is_rgb {
+                true => 3,
+                false => 1,
+            }
+    ];
+
+    buf_reader.read_exact(bytemuck::cast_slice_mut(&mut data))?;
+
+    if !is_le {
+        for v in bytemuck::cast_slice_mut::<_, u32>(&mut data) {
+            *v = v.swap_bytes();
+        }
+    }
+
+    Ok(match is_rgb {
+        true => Rgb32FImage::from_vec(width, height, data).unwrap().into(),
+        false => Luma32FImage::from_vec(width, height, data).unwrap().into(),
+    })
 }

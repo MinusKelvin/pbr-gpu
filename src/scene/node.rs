@@ -19,6 +19,7 @@ enum NodeType {
     Primitive = 2 << NodeId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl NodeId {
     pub const ZERO: NodeId = NodeId(0);
 

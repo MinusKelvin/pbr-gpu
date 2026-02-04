@@ -28,6 +28,9 @@ struct Options {
     #[clap(long, default_value = "simple")]
     integrator: String,
 
+    #[clap(long, default_value = "1")]
+    scale: f32,
+
     scene: PathBuf,
 }
 
@@ -339,7 +342,7 @@ fn main() -> anyhow::Result<()> {
         render_options.width,
         render_options.height,
         mean.into_iter()
-            .map(|xyza| xyz_to_srgb * xyza.xyz())
+            .map(|xyza| xyz_to_srgb * xyza.xyz() * options.scale)
             .map(|rgb| {
                 if rgb.x.is_infinite() {
                     dbg!(rgb);

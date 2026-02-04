@@ -15,6 +15,7 @@ enum LightType {
     Area = 2 << LightId::TAG_SHIFT,
 }
 
+#[allow(unused)]
 impl LightId {
     pub const ZERO: LightId = LightId(0);
 
