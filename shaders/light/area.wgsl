@@ -24,6 +24,9 @@ fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: ve
     }
 
     let shape_sample = shape_sample(light.shape, ref_p, random);
+    if shape_sample.pdf_wrt_area == 0 {
+        return LightSample();
+    }
 
     let alpha = texture_evaluate(light.alpha, shape_sample.uv, Wavelengths()).x;
     if alpha < 1 {
@@ -63,7 +66,7 @@ fn light_area_pdf(light: AreaLight, ref_p: vec3f, dir: vec3f) -> f32 {
 
     let d = result.p - ref_p;
 
-    if light.two_sided == 0 && dot(d, result.ng) > 0 || dot(d, result.ng) == 0 {
+    if light.two_sided == 0 && dot(d, result.ng) > 0 || dot(dir, result.ng) == 0 {
         return 0;
     }
 

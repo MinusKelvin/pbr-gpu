@@ -171,6 +171,9 @@ fn triangle_sample(tri: Triangle, ref_p: vec3f, random: vec2f) -> ShapeSample {
 
     let d = cross(v1.p - v0.p, v2.p - v0.p);
     let area = length(d) / 2;
+    if area == 0 {
+        return ShapeSample();
+    }
     var n_geo = normalize(d);
 
     if dot(n_geo, n_shade) < 0 {

@@ -32,7 +32,7 @@ fn material_metallic_workflow_evaluate(
 }
 
 fn bsdf_metallic_workflow_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
-    if wi.z * wo.z < 0 {
+    if wi.z * wo.z <= 0 {
         return vec4f();
     }
 
@@ -98,7 +98,7 @@ fn bsdf_metallic_workflow_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSa
 }
 
 fn bsdf_metallic_workflow_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
-    if wi_.z * wo_.z < 0 {
+    if wi_.z * wo_.z <= 0 {
         return 0;
     }
     var wo = wo_;

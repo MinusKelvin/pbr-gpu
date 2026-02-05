@@ -31,6 +31,9 @@ struct Options {
     #[clap(long, default_value = "1")]
     scale: f32,
 
+    #[clap(long, default_value = "0")]
+    sample_offset: u32,
+
     scene: PathBuf,
 }
 
@@ -222,11 +225,11 @@ fn main() -> anyhow::Result<()> {
 
     let mut last = queue.submit([]);
 
-    for i in 0u32..render_options.samples {
+    for i in options.sample_offset..render_options.samples {
         let mut encoder = device.create_command_encoder(&Default::default());
 
         {
-            let begin = (i == 0).then_some(0);
+            let begin = (i == options.sample_offset).then_some(0);
             let end = (i + 1 == render_options.samples).then_some(1);
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
@@ -338,14 +341,17 @@ fn main() -> anyhow::Result<()> {
     ]);
     let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
 
+    let mut had_invalid_pixels = false;
+
     image::RgbImage::from_vec(
         render_options.width,
         render_options.height,
         mean.into_iter()
             .map(|xyza| xyz_to_srgb * xyza.xyz() * options.scale)
             .map(|rgb| {
-                if rgb.x.is_infinite() {
-                    dbg!(rgb);
+                if !rgb.is_finite() {
+                    had_invalid_pixels = true;
+                    return Vec3::ONE;
                 }
                 let low = rgb * 12.92;
                 let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
@@ -358,6 +364,10 @@ fn main() -> anyhow::Result<()> {
     .unwrap()
     .save("img.png")
     .unwrap();
+
+    if had_invalid_pixels {
+        println!("Warning: Had pixels with non-finite values");
+    }
 
     Ok(())
 }
