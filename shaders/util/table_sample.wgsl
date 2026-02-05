@@ -14,6 +14,11 @@ struct TableSample1d {
     index: u32,
 }
 
+struct TablePdf1d {
+    pdf: f32,
+    index: u32,
+}
+
 struct TableSampler2d {
     min_x: f32,
     max_x: f32,
@@ -29,7 +34,7 @@ struct TableSample2d {
     pdf: f32,
 }
 
-fn sample_table_1d(table: TableSampler1d, random: f32) -> TableSample1d {
+fn table_1d_sample(table: TableSampler1d, random: f32) -> TableSample1d {
     let integral = FLOAT_DATA[table.cdf_ptr + table.len];
     let area = table.max_x - table.min_x;
     if integral == 0.0 {
@@ -62,14 +67,27 @@ fn sample_table_1d(table: TableSampler1d, random: f32) -> TableSample1d {
     );
 }
 
-fn sample_table_2d(table: TableSampler2d, random: vec2f) -> TableSample2d {
+fn table_1d_pdf(table: TableSampler1d, x: f32) -> TablePdf1d {
+    let integral = FLOAT_DATA[table.cdf_ptr + table.len];
+    let area = table.max_x - table.min_x;
+
+    let min = u32((x - table.min_x) / area * f32(table.len));
+
+    let v0 = FLOAT_DATA[table.cdf_ptr + min];
+    let v1 = FLOAT_DATA[table.cdf_ptr + min + 1];
+
+    let pdf = (v1 - v0) * f32(table.len) / integral / area;
+    return TablePdf1d(pdf, min);
+}
+
+fn table_2d_sample(table: TableSampler2d, random: vec2f) -> TableSample2d {
     let y_sampler = TableSampler1d(
         table.min_y,
         table.max_y,
         table.cdf_ptr + (table.width + 1) * table.height,
         table.height,
     );
-    let y_sample = sample_table_1d(y_sampler, random.y);
+    let y_sample = table_1d_sample(y_sampler, random.y);
 
     let x_sampler = TableSampler1d(
         table.min_x,
@@ -77,10 +95,30 @@ fn sample_table_2d(table: TableSampler2d, random: vec2f) -> TableSample2d {
         table.cdf_ptr + (table.width + 1) * y_sample.index,
         table.width,
     );
-    let x_sample = sample_table_1d(x_sampler, random.x);
+    let x_sample = table_1d_sample(x_sampler, random.x);
 
     return TableSample2d(
         vec2f(x_sample.value, y_sample.value),
         x_sample.pdf * y_sample.pdf
     );
+}
+
+fn table_2d_pdf(table: TableSampler2d, xy: vec2f) -> f32 {
+    let y_sampler = TableSampler1d(
+        table.min_y,
+        table.max_y,
+        table.cdf_ptr + (table.width + 1) * table.height,
+        table.height,
+    );
+    let y_pdf = table_1d_pdf(y_sampler, xy.y);
+
+    let x_sampler = TableSampler1d(
+        table.min_x,
+        table.max_x,
+        table.cdf_ptr + (table.width + 1) * y_pdf.index,
+        table.width,
+    );
+    let x_pdf = table_1d_pdf(x_sampler, xy.x);
+
+    return x_pdf.pdf * y_pdf.pdf;
 }

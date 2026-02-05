@@ -141,7 +141,7 @@ fn triangle_ray_transform(ray: Ray) -> mat4x4f {
     return shear * permute * translate;
 }
 
-fn triangle_sample(tri: Triangle, _p: vec3f, random: vec2f) -> ShapeSample {
+fn triangle_sample(tri: Triangle, ref_p: vec3f, random: vec2f) -> ShapeSample {
     let v0 = TRI_VERTICES[tri.v0];
     let v1 = TRI_VERTICES[tri.v1];
     let v2 = TRI_VERTICES[tri.v2];
@@ -174,4 +174,14 @@ fn triangle_sample(tri: Triangle, _p: vec3f, random: vec2f) -> ShapeSample {
     }
 
     return ShapeSample(p, n_geo, 1 / area);
+}
+
+fn triangle_pdf(tri: Triangle, ref_p: vec3f, p: vec3f) -> f32 {
+    let v0 = TRI_VERTICES[tri.v0];
+    let v1 = TRI_VERTICES[tri.v1];
+    let v2 = TRI_VERTICES[tri.v2];
+
+    let d = cross(v1.p - v0.p, v2.p - v0.p);
+    let area = length(d) / 2;
+    return 1 / area;
 }

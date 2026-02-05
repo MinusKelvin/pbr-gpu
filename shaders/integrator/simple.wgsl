@@ -5,7 +5,10 @@
 #import /light.wgsl
 
 const MAX_DEPTH = 250;
-const DO_LIGHT_SAMPLING = true;
+const LS_BSDF = 0;
+const LS_LIGHT = 1;
+const LS_MIS = 2;
+const LS_MODE = LS_MIS;
 
 fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
@@ -15,6 +18,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     var specular_bounce = false;
     var secondary_terminated = false;
+    var bsdf_pdf = 0.0;
 
     var depth = 0;
     while any(throughput > vec4f()) {
@@ -22,17 +26,35 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         if !result.hit {
             // add infinite lights and finish
-            if depth == 0 || specular_bounce || !DO_LIGHT_SAMPLING {
+            if depth == 0 || specular_bounce || LS_MODE == LS_BSDF {
                 for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
                     radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
+                }
+            }
+            if depth > 0 && !specular_bounce && LS_MODE == LS_MIS {
+                // direct lighting MIS
+                for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+                    let ls_pdf = light_sampler_pmf(ray.o, INFINITE_LIGHTS[i])
+                        * light_pdf(INFINITE_LIGHTS[i], ray.o, ray.d);
+                    radiance += throughput
+                        * inf_light_emission(INFINITE_LIGHTS[i], ray, wl)
+                        * mis_weight(bsdf_pdf, ls_pdf);
                 }
             }
             break;
         }
 
         // add light emitted by surface
-        if depth == 0 || specular_bounce || !DO_LIGHT_SAMPLING {
+        if depth == 0 || specular_bounce || LS_MODE == LS_BSDF {
             radiance += throughput * light_emission(result.light, ray, result, wl);
+        }
+        if depth > 0 && !specular_bounce && LS_MODE == LS_MIS {
+            // direct lighting MIS
+            let ls_pdf = light_sampler_pmf(ray.o, result.light)
+                * light_pdf(result.light, ray.o, ray.d);
+            radiance += throughput
+                * light_emission(result.light, ray, result, wl)
+                * mis_weight(bsdf_pdf, ls_pdf);
         }
 
         // enforce termination
@@ -52,7 +74,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));
         let old_dir = to_bsdf_frame * -ray.d;
 
-        if DO_LIGHT_SAMPLING {
+        if LS_MODE != LS_BSDF {
             // sample direct lighting
             radiance += throughput * _sample_direct_light(
                 bsdf,
@@ -69,6 +91,8 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         if bsdf_s.pdf == 0 {
             break;
         }
+
+        bsdf_pdf = bsdf_s.pdf;
 
         throughput *= bsdf_s.f * abs(bsdf_s.dir.z) / bsdf_s.pdf;
 
@@ -105,10 +129,13 @@ fn _sample_direct_light(
     }
 
     let new_dir = to_bsdf_frame * light_sample.dir;
+    let bsdf_pdf = bsdf_pdf(bsdf, old_dir, new_dir)
+        * f32(LS_MODE == LS_MIS);
     let contribution = light_sample.emission
         * bsdf_f(bsdf, old_dir, new_dir)
         * abs(new_dir.z)
-        / light_sample.pdf_wrt_solid_angle;
+        / light_sample.pdf_wrt_solid_angle
+        * mis_weight(light_sample.pdf_wrt_solid_angle, bsdf_pdf);
 
     if all(contribution == vec4f()) {
         return vec4f();
@@ -124,4 +151,8 @@ fn _sample_direct_light(
     }
 
     return contribution;
+}
+
+fn mis_weight(p1: f32, p2: f32) -> f32 {
+    return p1 / (p1 + p2);
 }

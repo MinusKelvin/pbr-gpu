@@ -23,3 +23,13 @@ fn bsdf_diffuse_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
     let pdf = pdf_cosine_hemisphere(dir);
     return BsdfSample(bsdf.v0 / PI, vec3f(dir.xy, copysign(dir.z, wo.z)), pdf, false);
 }
+
+fn bsdf_diffuse_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+    var wo = wo_;
+    var wi = wi_;
+    if wo.z < 0 {
+        wo.z = -wo.z;
+        wi.z = -wi.z;
+    }
+    return pdf_cosine_hemisphere(wi);
+}

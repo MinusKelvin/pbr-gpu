@@ -40,17 +40,32 @@ struct ShapeSample {
     pdf_wrt_area: f32,
 }
 
-fn shape_sample(shape: ShapeId, p: vec3f, random: vec2f) -> ShapeSample {
+fn shape_sample(shape: ShapeId, ref_p: vec3f, random: vec2f) -> ShapeSample {
     switch shape.id & SHAPE_TAG_MASK {
         case SHAPE_SPHERE {
-            return sphere_sample(SPHERES[shape.id & SHAPE_IDX_MASK], p, random);
+            return sphere_sample(SPHERES[shape.id & SHAPE_IDX_MASK], ref_p, random);
         }
         case SHAPE_TRIANGLE {
-            return triangle_sample(TRIANGLES[shape.id & SHAPE_IDX_MASK], p, random);
+            return triangle_sample(TRIANGLES[shape.id & SHAPE_IDX_MASK], ref_p, random);
         }
         default {
             // unreachable
             return ShapeSample();
+        }
+    }
+}
+
+fn shape_pdf(shape: ShapeId, ref_p: vec3f, p: vec3f) -> f32 {
+    switch shape.id & SHAPE_TAG_MASK {
+        case SHAPE_SPHERE {
+            return sphere_pdf(SPHERES[shape.id & SHAPE_IDX_MASK], ref_p, p);
+        }
+        case SHAPE_TRIANGLE {
+            return triangle_pdf(TRIANGLES[shape.id & SHAPE_IDX_MASK], ref_p, p);
+        }
+        default {
+            // unreachable
+            return 0;
         }
     }
 }

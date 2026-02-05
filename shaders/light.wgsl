@@ -62,17 +62,17 @@ fn light_emission(light: LightId, ray: Ray, hit: RaycastResult, wl: Wavelengths)
     }
 }
 
-fn light_sample(light: LightId, p: vec3f, wl: Wavelengths, random: vec2f) -> LightSample {
+fn light_sample(light: LightId, ref_p: vec3f, wl: Wavelengths, random: vec2f) -> LightSample {
     let idx = light.id & LIGHT_IDX_MASK;
     switch light.id & LIGHT_TAG_MASK {
         case LIGHT_UNIFORM {
-            return light_uniform_sample(UNIFORM_LIGHTS[idx], p, wl, random);
+            return light_uniform_sample(UNIFORM_LIGHTS[idx], ref_p, wl, random);
         }
         case LIGHT_IMAGE {
-            return light_image_sample(IMAGE_LIGHTS[idx], p, wl, random);
+            return light_image_sample(IMAGE_LIGHTS[idx], ref_p, wl, random);
         }
         case LIGHT_AREA {
-            return light_area_sample(AREA_LIGHTS[idx], p, wl, random);
+            return light_area_sample(AREA_LIGHTS[idx], ref_p, wl, random);
         }
         default {
             return LightSample();
@@ -80,12 +80,53 @@ fn light_sample(light: LightId, p: vec3f, wl: Wavelengths, random: vec2f) -> Lig
     }
 }
 
-fn light_sampler_sample(p: vec3f, wl: Wavelengths, random: vec3f) -> LightSample {
+fn light_pdf(light: LightId, ref_p: vec3f, dir: vec3f) -> f32 {
+    let idx = light.id & LIGHT_IDX_MASK;
+    switch light.id & LIGHT_TAG_MASK {
+        case LIGHT_UNIFORM {
+            return light_uniform_pdf(UNIFORM_LIGHTS[idx], ref_p, dir);
+        }
+        case LIGHT_IMAGE {
+            return light_image_pdf(IMAGE_LIGHTS[idx], ref_p, dir);
+        }
+        case LIGHT_AREA {
+            return light_area_pdf(AREA_LIGHTS[idx], ref_p, dir);
+        }
+        default {
+            return 0;
+        }
+    }
+}
+
+fn light_sample_path(light: LightId) -> u32 {
+    let idx = light.id & LIGHT_IDX_MASK;
+    switch light.id & LIGHT_TAG_MASK {
+        case LIGHT_UNIFORM {
+            return UNIFORM_LIGHTS[idx].light_sampling_path;
+        }
+        case LIGHT_IMAGE {
+            return IMAGE_LIGHTS[idx].light_sampling_path;
+        }
+        case LIGHT_AREA {
+            return AREA_LIGHTS[idx].light_sampling_path;
+        }
+        default {
+            return 0;
+        }
+    }
+}
+
+fn light_sampler_sample(ref_p: vec3f, wl: Wavelengths, random: vec3f) -> LightSample {
     let count = f32(arrayLength(&ALL_LIGHTS));
     let light = ALL_LIGHTS[u32(random.z * count)];
     let light_pmf = 1.0 / count;
 
-    var sample = light_sample(light, p, wl, random.xy);
+    var sample = light_sample(light, ref_p, wl, random.xy);
     sample.pdf_wrt_solid_angle *= light_pmf;
     return sample;
+}
+
+fn light_sampler_pmf(ref_p: vec3f, light: LightId) -> f32 {
+    let count = f32(arrayLength(&ALL_LIGHTS));
+    return 1.0 / count;
 }

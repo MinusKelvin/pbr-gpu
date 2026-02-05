@@ -97,6 +97,31 @@ fn bsdf_metallic_workflow_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSa
     return BsdfSample(f, wi, pdf, false);
 }
 
+fn bsdf_metallic_workflow_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+    if wi_.z * wo_.z < 0 {
+        return 0;
+    }
+    var wo = wo_;
+    var wi = wi_;
+    if wo.z < 0 {
+        wo.z = -wo.z;
+        wi.z = -wi.z;
+    }
+
+    let alpha = bsdf.v1.xy;
+    let nm = normalize(wi + wo);
+
+    let pr_diffuse = 0.5 * (1 - bsdf.v1.z);
+    let pdf_diffuse = pdf_cosine_hemisphere(wi);
+    var pdf_specular: f32;
+    if !trowbridge_reitz_is_smooth(alpha) {
+        pdf_specular = trowbridge_reitz_visible_ndf(alpha, wo, nm)
+            / (4 * abs(dot(wo, nm)));
+    }
+
+    return mix(pdf_specular, pdf_diffuse, pr_diffuse);
+}
+
 fn fresnel_schlick(base_color: vec4f, metallic: f32, cos_theta: f32) -> vec4f {
     let f0 = mix(vec4f(0.04), base_color, metallic);
     let v = 1 - cos_theta;

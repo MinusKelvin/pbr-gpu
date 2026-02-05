@@ -98,6 +98,25 @@ fn bsdf_conductor_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
     return BsdfSample(f, wi, pdf, false);
 }
 
+fn bsdf_conductor_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+    let alpha = bsdf.v2.xy;
+    if trowbridge_reitz_is_smooth(alpha) || wo_.z * wi_.z < 0 {
+        return 0;
+    }
+    var wo = wo_;
+    var wi = wi_;
+    if wo.z < 0 {
+        wo.z = -wo.z;
+        wi.z = -wi.z;
+    }
+
+    let nm = normalize(wi + wo);
+    let pdf = trowbridge_reitz_visible_ndf(alpha, wo, nm)
+        / (4 * abs(dot(wo, nm)));
+
+    return pdf;
+}
+
 fn fresnel_complex(cos_theta: f32, ior: vec2f) -> f32 {
     let sin2_theta = 1 - cos_theta * cos_theta;
     let sin2_theta_transmit = complex_div(vec2f(sin2_theta, 0), complex_mul(ior, ior));

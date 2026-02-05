@@ -552,17 +552,7 @@ impl SceneBuilder {
             let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
                 return;
             };
-            let sampling_distr = self.scene.image_sampling_distribution(image);
-            self.scene.add_image_light(ImageLight {
-                transform: Transform {
-                    m: self.state.transform.as_mat4(),
-                    m_inv: self.state.transform.inverse().as_mat4(),
-                },
-                image,
-                scale,
-                sampling_distr,
-                _padding: [0; 3],
-            });
+            self.scene.add_image_light(self.state.transform, image, scale);
         } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
             self.scene.add_uniform_light(spectrum);
         } else {

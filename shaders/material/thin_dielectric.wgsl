@@ -41,3 +41,7 @@ fn bsdf_thin_dielectric_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSamp
         return BsdfSample(vec4f(f), wi, 1 - r, true);
     }
 }
+
+fn bsdf_thin_dielectric_pdf(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> f32 {
+    return 0;
+}

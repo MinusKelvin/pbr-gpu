@@ -115,22 +115,22 @@ fn bsdf_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
     }
 }
 
-fn bsdf_sample(bsdf: Bsdf, wi: vec3f, random: vec3f) -> BsdfSample {
+fn bsdf_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
     switch bsdf.id {
         case BSDF_DIFFUSE {
-            return bsdf_diffuse_sample(bsdf, wi, random);
+            return bsdf_diffuse_sample(bsdf, wo, random);
         }
         case BSDF_CONDUCTOR {
-            return bsdf_conductor_sample(bsdf, wi, random);
+            return bsdf_conductor_sample(bsdf, wo, random);
         }
         case BSDF_DIELECTRIC {
-            return bsdf_dielectric_sample(bsdf, wi, random);
+            return bsdf_dielectric_sample(bsdf, wo, random);
         }
         case BSDF_THIN_DIELECTRIC {
-            return bsdf_thin_dielectric_sample(bsdf, wi, random);
+            return bsdf_thin_dielectric_sample(bsdf, wo, random);
         }
         case BSDF_METALLIC_WORKFLOW {
-            return bsdf_metallic_workflow_sample(bsdf, wi, random);
+            return bsdf_metallic_workflow_sample(bsdf, wo, random);
         }
         default {
             // this is also the BSDF_DIFFUSE_TRANSMIT case
@@ -140,11 +140,36 @@ fn bsdf_sample(bsdf: Bsdf, wi: vec3f, random: vec3f) -> BsdfSample {
                 dir.z = -dir.z;
             }
             return BsdfSample(
-                bsdf_f(bsdf, dir, wi),
+                bsdf_f(bsdf, dir, wo),
                 dir,
                 pdf / 2.0,
                 false,
             );
+        }
+    }
+}
+
+fn bsdf_pdf(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> f32 {
+    switch bsdf.id {
+        case BSDF_DIFFUSE {
+            return bsdf_diffuse_pdf(bsdf, wo, wi);
+        }
+        case BSDF_CONDUCTOR {
+            return bsdf_conductor_pdf(bsdf, wo, wi);
+        }
+        case BSDF_DIELECTRIC {
+            return bsdf_dielectric_pdf(bsdf, wo, wi);
+        }
+        case BSDF_THIN_DIELECTRIC {
+            return bsdf_thin_dielectric_pdf(bsdf, wo, wi);
+        }
+        case BSDF_METALLIC_WORKFLOW {
+            return bsdf_metallic_workflow_pdf(bsdf, wo, wi);
+        }
+        default {
+            // this is also the BSDF_DIFFUSE_TRANSMIT case
+            let pdf = pdf_cosine_hemisphere(vec3f(wi.xy, copysign(wi.z, 1)));
+            return pdf / 2;
         }
     }
 }
