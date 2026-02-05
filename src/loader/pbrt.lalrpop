@@ -11,6 +11,7 @@ pub TopLevel = Statement*;
 
 Statement: () = {
     "Include" <String> => builder.include(Path::new(<>)),
+    "Import" <String> => builder.include(Path::new(<>)),
     "WorldBegin" => builder.world_begin(),
     "AttributeBegin" => builder.push(),
     "AttributeEnd" => builder.pop(),

@@ -54,6 +54,8 @@ fn main() -> anyhow::Result<()> {
         render_options.samples = samples;
     }
 
+    scene.print_stats();
+
     let instance = wgpu::Instance::new(&Default::default());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {

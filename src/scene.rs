@@ -9,7 +9,6 @@ use std::path::Path;
 use bytemuck::NoUninit;
 use glam::{BVec3, Vec3};
 use image::DynamicImage;
-use image::GenericImageView;
 use image::ImageBuffer;
 use image::Luma;
 use image::Pixel;
@@ -106,6 +105,50 @@ impl Scene {
             this.named_spectra.insert(name, v);
         }
         this
+    }
+
+    #[rustfmt::skip]
+    pub fn print_stats(&self) {
+        println!("Shapes");
+        println!("  Spheres           {}", human_size_of(&self.spheres));
+        println!("  Triangles         {}", human_size_of(&self.triangles));
+        println!("  Tri verts         {}", human_size_of(&self.triangle_vertices));
+        println!("Scene geometry");
+        println!("  Primitives        {}", human_size_of(&self.primitive_nodes));
+        println!("  Transforms        {}", human_size_of(&self.transform_nodes));
+        println!("  BVH               {}", human_size_of(&self.bvh_nodes));
+        println!("Texture Metadata");
+        println!("  Constant          {}", human_size_of(&self.constant_tex));
+        println!("  Float image       {}", human_size_of(&self.image_float_tex));
+        println!("  Color image       {}", human_size_of(&self.image_rgb_tex));
+        println!("  Scale             {}", human_size_of(&self.scale_tex));
+        println!("  Mix               {}", human_size_of(&self.mix_tex));
+        println!("  Checkerboard      {}", human_size_of(&self.mix_tex));
+        println!("  Image data        {}", human_size(self.images.iter().map(|img| match img {
+            ImageData::Float(img) => std::mem::size_of_val(img.as_raw().as_slice()),
+            ImageData::FloatRgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
+            ImageData::Srgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
+        }).sum()));
+        println!("Materials");
+        println!("  Diffuse           {}", human_size_of(&self.diffuse_mat));
+        println!("  Diffuse Transmit  {}", human_size_of(&self.diffuse_transmit_mat));
+        println!("  Conductor         {}", human_size_of(&self.conductor_mat));
+        println!("  Dielectric        {}", human_size_of(&self.dielectric_mat));
+        println!("  Thin Dielectric   {}", human_size_of(&self.thin_dielectric_mat));
+        println!("  Metallic Workflow {}", human_size_of(&self.metallic_workflow_mat));
+        println!("Lights");
+        println!("  Inf Uniform       {}", human_size_of(&self.uniform_lights));
+        println!("  Inf Image         {}", human_size_of(&self.image_lights));
+        println!("  Area              {}", human_size_of(&self.area_lights));
+        println!("  Light Sampler     {}", human_size_of(&self.all_lights));
+        println!("Spectra");
+        println!("  Table             {}", human_size_of(&self.table_spectra));
+        println!("  Constant          {}", human_size_of(&self.constant_spectra));
+        println!("  Rgb               {}", human_size_of(&self.rgb_albedo_spectra));
+        println!("  Rgb Illuminant    {}", human_size_of(&self.rgb_illuminant_spectra));
+        println!("  Blackbody         {}", human_size_of(&self.blackbody_spectra));
+        println!("  Piecewise Linear  {}", human_size_of(&self.piecewise_linear_spectra));
+        println!("Misc Data           {}", human_size_of(&self.float_data));
     }
 
     pub fn workaround_empty_buffer_nonsense(&mut self) {
@@ -323,7 +366,7 @@ impl Scene {
             return None;
         };
         let id = self.images.len() as u32;
-        self.images.push(match img.as_flat_samples_f32().is_some() {
+        self.images.push(match img {
             _ if float && img.has_alpha() => {
                 let data = img.to_luma_alpha32f();
                 let data = ImageBuffer::from_fn(img.width(), img.height(), |x, y| {
@@ -331,12 +374,18 @@ impl Scene {
                 });
                 ImageData::Float(data)
             }
-            _ if float => {
-                println!("note: float texture from image without alpha channel will be constant 1");
-                ImageData::Float(Luma32FImage::from_pixel(1, 1, Luma([1.0])))
+            DynamicImage::ImageLuma16(_) | DynamicImage::ImageLuma8(_) if float => {
+                ImageData::Float(img.to_luma32f())
             }
-            true => ImageData::FloatRgb(img.to_rgba32f()),
-            false => ImageData::Srgb(img.to_rgba8()),
+            _ if float => {
+                let data = img.to_rgba32f();
+                let data = ImageBuffer::from_fn(img.width(), img.height(), |x, y| {
+                    Luma([data.get_pixel(x, y).0[0]])
+                });
+                ImageData::Float(data)
+            }
+            _ if img.as_flat_samples_f32().is_some() => ImageData::FloatRgb(img.to_rgba32f()),
+            _ => ImageData::Srgb(img.to_rgba8()),
         });
         Some(id)
     }
@@ -511,4 +560,24 @@ fn load_pfm_image(path: &Path) -> image::ImageResult<DynamicImage> {
         true => Rgb32FImage::from_vec(width, height, data).unwrap().into(),
         false => Luma32FImage::from_vec(width, height, data).unwrap().into(),
     })
+}
+
+fn human_size_of<T>(data: &[T]) -> String {
+    human_size(std::mem::size_of_val(data))
+}
+
+fn human_size(size: usize) -> String {
+    let size = size as f64;
+    let kib = size / 1024.0;
+    let mib = kib / 1024.0;
+    let gib = mib / 1024.0;
+    if gib > 1.0 {
+        format!("{gib:7.1} GiB")
+    } else if mib > 1.0 {
+        format!("{mib:7.1} MiB")
+    } else if kib > 1.0 {
+        format!("{kib:7.1} KiB")
+    } else {
+        format!("{size:7.1} B")
+    }
 }

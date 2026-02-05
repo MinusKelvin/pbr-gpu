@@ -21,12 +21,8 @@ fn material_metallic_workflow_evaluate(
     var bsdf: Bsdf;
     bsdf.id = BSDF_METALLIC_WORKFLOW;
     bsdf.v0 = texture_evaluate(material.base_color, uv, wl);
-    let isotropic_alpha = length(vec2f(
-        texture_evaluate(material.roughness_u, uv, wl).x,
-        texture_evaluate(material.roughness_v, uv, wl).x,
-    ));
-    bsdf.v1.x = isotropic_alpha;
-    bsdf.v1.y = isotropic_alpha;
+    bsdf.v1.x = texture_evaluate(material.roughness_u, uv, wl).x;
+    bsdf.v1.y = texture_evaluate(material.roughness_v, uv, wl).x;
     bsdf.v1.z = texture_evaluate(material.metallic, uv, wl).x;
     return bsdf;
 }
