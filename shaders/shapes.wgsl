@@ -37,6 +37,7 @@ fn shape_raycast(shape: ShapeId, ray: Ray, t_max: f32) -> RaycastResult {
 struct ShapeSample {
     p: vec3f,
     ng: vec3f,
+    uv: vec2f,
     pdf_wrt_area: f32,
 }
 

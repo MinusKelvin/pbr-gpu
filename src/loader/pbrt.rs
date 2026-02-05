@@ -590,16 +590,17 @@ impl SceneBuilder {
 
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
+        let one = self.scene.add_constant_spectrum(1.0);
+        let one = self.scene.add_constant_texture(one);
+
         let light = match self.state.area_light {
             Some(spectrum) => {
                 println!("Note: light sampling spheres is currently not supported");
-                self.scene.add_area_light(shape_id, spectrum)
+                self.scene.add_area_light(shape_id, spectrum, one)
             }
             None => LightId::ZERO,
         };
 
-        let one = self.scene.add_constant_spectrum(1.0);
-        let one = self.scene.add_constant_texture(one);
         let primitive = self.scene.add_primitive(PrimitiveNode {
             shape: shape_id,
             material: self.state.material,
@@ -719,7 +720,7 @@ impl SceneBuilder {
     fn create_primitives(&mut self, alpha: TextureId, shapes: impl Iterator<Item = ShapeId>) {
         self.current_prims.extend(shapes.map(|shape| {
             let light = match self.state.area_light {
-                Some(rgb) => self.scene.add_area_light(shape, rgb),
+                Some(rgb) => self.scene.add_area_light(shape, rgb, alpha),
                 None => LightId::ZERO,
             };
             self.scene.add_primitive(PrimitiveNode {

@@ -331,7 +331,10 @@ impl Scene {
                 });
                 ImageData::Float(data)
             }
-            _ if float => ImageData::Float(img.to_luma32f()),
+            _ if float => {
+                println!("note: float texture from image without alpha channel will be constant 1");
+                ImageData::Float(Luma32FImage::from_pixel(1, 1, Luma([1.0])))
+            }
             true => ImageData::FloatRgb(img.to_rgba32f()),
             false => ImageData::Srgb(img.to_rgba8()),
         });

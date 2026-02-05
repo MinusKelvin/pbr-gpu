@@ -165,6 +165,10 @@ fn triangle_sample(tri: Triangle, ref_p: vec3f, random: vec2f) -> ShapeSample {
         + b.y * v1.n
         + b.z * v2.n;
 
+    let uv = b.x * vec2(v0.u, v0.v)
+        + b.y * vec2(v1.u, v1.v)
+        + b.z * vec2(v2.u, v2.v);
+
     let d = cross(v1.p - v0.p, v2.p - v0.p);
     let area = length(d) / 2;
     var n_geo = normalize(d);
@@ -173,7 +177,7 @@ fn triangle_sample(tri: Triangle, ref_p: vec3f, random: vec2f) -> ShapeSample {
         n_geo = -n_geo;
     }
 
-    return ShapeSample(p, n_geo, 1 / area);
+    return ShapeSample(p, n_geo, uv, 1 / area);
 }
 
 fn triangle_pdf(tri: Triangle, ref_p: vec3f, p: vec3f) -> f32 {

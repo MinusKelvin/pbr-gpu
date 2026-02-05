@@ -6,6 +6,7 @@ struct AreaLight {
     spectrum: SpectrumId,
     transform_node: NodeId,
     shape: ShapeId,
+    alpha: TextureId,
     two_sided: u32,
     light_sampling_path: u32,
 }
@@ -23,6 +24,16 @@ fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: ve
     }
 
     let shape_sample = shape_sample(light.shape, ref_p, random);
+
+    let alpha = texture_evaluate(light.alpha, shape_sample.uv, Wavelengths()).x;
+    if alpha < 1 {
+        let h = hash_4d(vec4u(980736245, bitcast<vec3u>(shape_sample.p))).z;
+        let u = f32(h) / 4294967296;
+
+        if u >= alpha {
+            return LightSample();
+        }
+    }
 
     let d = shape_sample.p - ref_p;
 
