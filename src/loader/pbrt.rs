@@ -525,6 +525,27 @@ impl SceneBuilder {
                     v_roughness,
                 )
             }
+            "mix" => {
+                let materials = props.get_string_list("materials").unwrap();
+                let m1 = materials[0];
+                let m2 = materials[1];
+
+                let m1 = self.materials.get(m1).copied().unwrap_or_else(|| {
+                    println!("Material {m1} does not exist?");
+                    self.error_material
+                });
+                let m2 = self.materials.get(m2).copied().unwrap_or_else(|| {
+                    println!("Material {m2} does not exist?");
+                    self.error_material
+                });
+
+                let amount = self.texture_property(&props, "amount").unwrap_or_else(|| {
+                    let spec = self.scene.add_constant_spectrum(0.5);
+                    self.scene.add_constant_texture(spec)
+                });
+
+                self.scene.add_mix_material(m1, m2, amount)
+            }
             _ => {
                 println!("Unrecognized material type {ty}");
                 self.error_material
@@ -814,6 +835,12 @@ impl<'a> Props<'a> {
             .filter(|&&(ty, _)| ty == "string" || ty == "texture" || ty == "spectrum")
             .and_then(|(_, v)| v.get(0))
             .and_then(Value::as_string)
+    }
+
+    fn get_string_list(&self, name: &str) -> Option<Vec<&'a str>> {
+        self.lookup(name)
+            .filter(|&&(ty, _)| ty == "string")
+            .and_then(|(_, vals)| vals.into_iter().map(|v| v.as_string()).collect())
     }
 
     fn get_bool(&self, name: &str) -> Option<bool> {

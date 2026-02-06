@@ -15,6 +15,7 @@ enum MaterialType {
     Dielectric = 3 << MaterialId::TAG_SHIFT,
     ThinDielectric = 4 << MaterialId::TAG_SHIFT,
     MetallicWorkflow = 5 << MaterialId::TAG_SHIFT,
+    Mix = 6 << MaterialId::TAG_SHIFT,
 }
 
 #[allow(unused)]
@@ -125,6 +126,17 @@ impl Scene {
         });
         id
     }
+
+    pub fn add_mix_material(
+        &mut self,
+        m1: MaterialId,
+        m2: MaterialId,
+        amount: TextureId,
+    ) -> MaterialId {
+        let id = MaterialId::new(MaterialType::Mix, self.mix_mat.len());
+        self.mix_mat.push(MixMaterial { m1, m2, amount });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -171,4 +183,12 @@ pub struct MetallicWorkflowMaterial {
     pub metallic: TextureId,
     pub u_roughness: TextureId,
     pub v_roughness: TextureId,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct MixMaterial {
+    pub m1: MaterialId,
+    pub m2: MaterialId,
+    pub amount: TextureId,
 }

@@ -19,6 +19,8 @@ var<storage> DIELECTRIC_MATERIALS: array<DielectricMaterial>;
 var<storage> THIN_DIELECTRIC_MATERIALS: array<ThinDielectricMaterial>;
 @group(0) @binding(101)
 var<storage> METALLIC_WORKFLOW_MATERIALS: array<MetallicWorkflowMaterial>;
+@group(0) @binding(102)
+var<storage> MIX_MATERIALS: array<MixMaterial>;
 
 struct MaterialId {
     id: u32,
@@ -35,6 +37,7 @@ const MATERIAL_CONDUCTOR: u32 = 2 << MATERIAL_TAG_SHIFT;
 const MATERIAL_DIELECTRIC: u32 = 3 << MATERIAL_TAG_SHIFT;
 const MATERIAL_THIN_DIELECTRIC: u32 = 4 << MATERIAL_TAG_SHIFT;
 const MATERIAL_METALLIC_WORKFLOW: u32 = 5 << MATERIAL_TAG_SHIFT;
+const MATERIAL_MIX: u32 = 6 << MATERIAL_TAG_SHIFT;
 
 struct Bsdf {
     id: u32,
@@ -57,7 +60,26 @@ struct BsdfSample {
     specular: bool,
 }
 
-fn material_evaluate(material: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
+struct MixMaterial {
+    m1: MaterialId,
+    m2: MaterialId,
+    amount: TextureId,
+}
+
+fn material_evaluate(material_: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
+    var material = material_;
+    while (material.id & MATERIAL_TAG_MASK) == MATERIAL_MIX {
+        let mix = MIX_MATERIALS[material.id & MATERIAL_IDX_MASK];
+        let amount = texture_evaluate(mix.amount, uv, wl).x;
+        let h = hash_4d(vec4u(bitcast<vec2u>(uv), mix.m1.id, mix.m2.id)).w;
+        let u = f32(h) / 4294967296;
+        if u < amount {
+            material = mix.m2;
+        } else {
+            material = mix.m1;
+        }
+    }
+
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
         case MATERIAL_DIFFUSE {

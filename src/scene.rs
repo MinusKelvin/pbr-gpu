@@ -64,6 +64,7 @@ pub struct Scene {
     pub dielectric_mat: Vec<DielectricMaterial>,
     pub thin_dielectric_mat: Vec<ThinDielectricMaterial>,
     pub metallic_workflow_mat: Vec<MetallicWorkflowMaterial>,
+    pub mix_mat: Vec<MixMaterial>,
 
     pub infinite_lights: Vec<LightId>,
     pub all_lights: Vec<LightId>,
@@ -137,6 +138,7 @@ impl Scene {
         println!("  Dielectric        {}", human_size_of(&self.dielectric_mat));
         println!("  Thin Dielectric   {}", human_size_of(&self.thin_dielectric_mat));
         println!("  Metallic Workflow {}", human_size_of(&self.metallic_workflow_mat));
+        println!("  Mix               {}", human_size_of(&self.mix_mat));
         println!("Lights");
         println!("  Inf Uniform       {}", human_size_of(&self.uniform_lights));
         println!("  Inf Image         {}", human_size_of(&self.image_lights));
@@ -198,6 +200,7 @@ impl Scene {
                 storage_buffer_entry(99),
                 storage_buffer_entry(100),
                 storage_buffer_entry(101),
+                storage_buffer_entry(102),
                 storage_buffer_entry(128),
                 storage_buffer_entry(129),
                 storage_buffer_entry(130),
@@ -243,6 +246,7 @@ impl Scene {
         let dielectric_mat = make_buffer(device, &self.dielectric_mat);
         let thin_dielectric_mat = make_buffer(device, &self.thin_dielectric_mat);
         let metallic_workflow_mat = make_buffer(device, &self.metallic_workflow_mat);
+        let mix_mat = make_buffer(device, &self.mix_mat);
 
         let infinite_lights = make_buffer(device, &self.infinite_lights);
         let all_lights = make_buffer(device, &self.all_lights);
@@ -344,6 +348,7 @@ impl Scene {
                 make_entry(99, &dielectric_mat),
                 make_entry(100, &thin_dielectric_mat),
                 make_entry(101, &metallic_workflow_mat),
+                make_entry(102, &mix_mat),
                 make_entry(128, &infinite_lights),
                 make_entry(129, &all_lights),
                 make_entry(130, &uniform_lights),
