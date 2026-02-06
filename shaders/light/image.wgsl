@@ -23,6 +23,9 @@ fn inf_light_image_emission(light: ImageLight, ray_: Ray, wl: Wavelengths) -> ve
 
 fn light_image_sample(light: ImageLight, ref_p: vec3f, wl: Wavelengths, random: vec2f) -> LightSample {
     let uv = table_2d_sample(light.samp, random);
+    if uv.pdf == 0 {
+        return LightSample();
+    }
     let dir = transform_vector(light.transform, equal_area_square_to_dir(uv.value));
 
     let texel = vec2u(fract(uv.value) * vec2f(textureDimensions(IMAGES[light.image])));

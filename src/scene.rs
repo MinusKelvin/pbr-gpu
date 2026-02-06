@@ -388,6 +388,10 @@ impl Scene {
                 ImageData::Float(img.to_luma32f())
             }
             _ if float => {
+                println!(
+                    "creating float texture from color image without alpha is suspect ({})",
+                    path.display()
+                );
                 let data = img.to_rgba32f();
                 let data = ImageBuffer::from_fn(img.width(), img.height(), |x, y| {
                     Luma([data.get_pixel(x, y).0[0]])

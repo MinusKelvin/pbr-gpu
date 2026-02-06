@@ -343,18 +343,20 @@ fn main() -> anyhow::Result<()> {
     ]);
     let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
 
-    let mut had_invalid_pixels = false;
+    let mut invalid_pixel = None;
 
     image::RgbImage::from_vec(
         render_options.width,
         render_options.height,
         mean.into_iter()
-            .map(|xyza| xyz_to_srgb * xyza.xyz() * options.scale)
-            .map(|rgb| {
-                if !rgb.is_finite() {
-                    had_invalid_pixels = true;
-                    return Vec3::ONE;
+            .enumerate()
+            .inspect(|&(i, raw)| {
+                if !raw.is_finite() {
+                    invalid_pixel = Some(i);
                 }
+            })
+            .map(|(_, xyza)| xyz_to_srgb * xyza.xyz() * options.scale)
+            .map(|rgb| {
                 let low = rgb * 12.92;
                 let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
                 Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)
@@ -367,8 +369,8 @@ fn main() -> anyhow::Result<()> {
     .save("img.png")
     .unwrap();
 
-    if had_invalid_pixels {
-        println!("Warning: Had pixels with non-finite values");
+    if let Some(i) = invalid_pixel {
+        println!("Warning: Pixel {i} had non-finite value");
     }
 
     Ok(())

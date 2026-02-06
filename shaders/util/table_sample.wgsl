@@ -38,11 +38,7 @@ fn table_1d_sample(table: TableSampler1d, random: f32) -> TableSample1d {
     let integral = FLOAT_DATA[table.cdf_ptr + table.len];
     let area = table.max_x - table.min_x;
     if integral == 0.0 {
-        return TableSample1d(
-            random * area + table.min_x,
-            1.0 / area,
-            u32(random * f32(table.len))
-        );
+        return TableSample1d();
     }
 
     let u = random * integral;
@@ -69,6 +65,9 @@ fn table_1d_sample(table: TableSampler1d, random: f32) -> TableSample1d {
 
 fn table_1d_pdf(table: TableSampler1d, x: f32) -> TablePdf1d {
     let integral = FLOAT_DATA[table.cdf_ptr + table.len];
+    if integral == 0 {
+        return TablePdf1d();
+    }
     let area = table.max_x - table.min_x;
 
     let min = u32((x - table.min_x) / area * f32(table.len));
@@ -88,6 +87,9 @@ fn table_2d_sample(table: TableSampler2d, random: vec2f) -> TableSample2d {
         table.height,
     );
     let y_sample = table_1d_sample(y_sampler, random.y);
+    if y_sample.pdf == 0 {
+        return TableSample2d();
+    }
 
     let x_sampler = TableSampler1d(
         table.min_x,

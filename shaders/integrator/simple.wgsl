@@ -84,6 +84,10 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
                 ray,
                 wl,
             );
+        } else {
+            // consume sampler dimensions which would be used by direct light sampling
+            sample_2d();
+            sample_1d();
         }
 
         // sample bsdf
@@ -99,7 +103,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         // russian roulette
         let rr = max(max(throughput.x, throughput.y), max(throughput.z, throughput.w));
         if rr < 1 && depth > 1 {
-            if sample_1d() >= rr {
+            if sample_1d() > rr {
                 break;
             }
             throughput /= rr;
