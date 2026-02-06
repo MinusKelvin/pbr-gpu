@@ -16,6 +16,7 @@ enum SpectrumType {
     RgbIlluminant = 3 << SpectrumId::TAG_SHIFT,
     Blackbody = 4 << SpectrumId::TAG_SHIFT,
     PiecewiseLinear = 5 << SpectrumId::TAG_SHIFT,
+    RgbIorIm = 6 << SpectrumId::TAG_SHIFT,
 }
 
 #[allow(unused)]
@@ -62,6 +63,13 @@ impl Scene {
         let id = SpectrumId::new(SpectrumType::RgbAlbedo, self.rgb_albedo_spectra.len());
         self.rgb_albedo_spectra
             .push(RgbAlbedoSpectrum { rgb, _padding: 0 });
+        id
+    }
+
+    pub fn add_rgb_ior_im_spectrum(&mut self, rgb: Vec3) -> SpectrumId {
+        let id = SpectrumId::new(SpectrumType::RgbIorIm, self.rgb_ior_im_spectra.len());
+        self.rgb_ior_im_spectra
+            .push(RgbIorImSpectrum { rgb, _padding: 0 });
         id
     }
 
@@ -152,6 +160,13 @@ pub struct BlackbodySpectrum {
 pub struct PiecewiseLinearSpectrum {
     pub ptr: u32,
     pub entries: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct RgbIorImSpectrum {
+    pub rgb: Vec3,
+    pub _padding: u32,
 }
 
 fn blackbody(lambda: f32, temperature: f32) -> f32 {

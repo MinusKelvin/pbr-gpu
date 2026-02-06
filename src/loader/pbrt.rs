@@ -279,6 +279,11 @@ impl SceneBuilder {
     }
 
     fn uv_mapping(&self, props: &Props) -> UvMappingParams {
+        if let Some(mapping) = props.get_string("mapping")
+            && mapping != "uv"
+        {
+            println!("Warning: Unsupported texture mapping mode {mapping}");
+        }
         let mut uv_map = UvMappingParams {
             scale: Vec2::ONE,
             delta: Vec2::ZERO,
@@ -420,12 +425,20 @@ impl SceneBuilder {
                     .add_diffuse_transmit_material(reflectance, transmittance, scale)
             }
             "conductor" => {
-                let ior_re = self
-                    .spectrum_property(&props, "eta", 1.0, false)
-                    .unwrap_or(self.scene.named_spectra["metal-Cu-eta"]);
-                let ior_im = self
-                    .spectrum_property(&props, "k", 1.0, false)
-                    .unwrap_or(self.scene.named_spectra["metal-Cu-k"]);
+                let refl = props.get_vec3_list("reflectance");
+
+                let (ior_re, ior_im) = match refl {
+                    Some(refl) => (
+                        self.scene.add_constant_spectrum(1.0),
+                        self.scene.add_rgb_ior_im_spectrum(refl[0].as_vec3()),
+                    ),
+                    None => (
+                        self.spectrum_property(&props, "eta", 1.0, false)
+                            .unwrap_or(self.scene.named_spectra["metal-Cu-eta"]),
+                        self.spectrum_property(&props, "k", 1.0, false)
+                            .unwrap_or(self.scene.named_spectra["metal-Cu-k"]),
+                    ),
+                };
 
                 let u_roughness = self.texture_property(&props, "uroughness");
                 let v_roughness = self.texture_property(&props, "vroughness");

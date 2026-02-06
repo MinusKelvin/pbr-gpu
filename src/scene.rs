@@ -78,6 +78,7 @@ pub struct Scene {
     pub rgb_illuminant_spectra: Vec<RgbIlluminantSpectrum>,
     pub blackbody_spectra: Vec<BlackbodySpectrum>,
     pub piecewise_linear_spectra: Vec<PiecewiseLinearSpectrum>,
+    pub rgb_ior_im_spectra: Vec<RgbIorImSpectrum>,
 
     pub float_data: Vec<f32>,
 
@@ -148,6 +149,7 @@ impl Scene {
         println!("  Rgb Illuminant    {}", human_size_of(&self.rgb_illuminant_spectra));
         println!("  Blackbody         {}", human_size_of(&self.blackbody_spectra));
         println!("  Piecewise Linear  {}", human_size_of(&self.piecewise_linear_spectra));
+        println!("  Rgb Conductor     {}", human_size_of(&self.rgb_ior_im_spectra));
         println!("Misc Data           {}", human_size_of(&self.float_data));
     }
 
@@ -207,6 +209,7 @@ impl Scene {
                 storage_buffer_entry(163),
                 storage_buffer_entry(164),
                 storage_buffer_entry(165),
+                storage_buffer_entry(166),
                 storage_buffer_entry(192),
             ],
         })
@@ -254,6 +257,7 @@ impl Scene {
         let rgb_illuminant_spectra = make_buffer(device, &self.rgb_illuminant_spectra);
         let blackbody_spectra = make_buffer(device, &self.blackbody_spectra);
         let piecewise_linear_spectra = make_buffer(device, &self.piecewise_linear_spectra);
+        let rgb_ior_im_spectra = make_buffer(device, &self.rgb_ior_im_spectra);
 
         let float_data = make_buffer(device, &self.float_data);
 
@@ -351,6 +355,7 @@ impl Scene {
                 make_entry(163, &rgb_illuminant_spectra),
                 make_entry(164, &blackbody_spectra),
                 make_entry(165, &piecewise_linear_spectra),
+                make_entry(166, &rgb_ior_im_spectra),
                 make_entry(192, &float_data),
             ],
         })
