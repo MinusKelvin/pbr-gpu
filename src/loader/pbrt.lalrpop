@@ -28,35 +28,39 @@ Statement: () = {
     "Transform" <MaybeBracketed<Mat4>> => builder.set_transform(<>),
     "ConcatTransform" <MaybeBracketed<Mat4>> => builder.apply_transform(<>),
 
-    "Camera" <String> <Properties> => builder.camera(<>),
+    "Camera" <ty:String> <props:Properties> => builder.camera(ty, props.with_ctx("camera", ty)),
 
     "Shape" <ty:String> <props:Properties> => match ty {
-        "sphere" => builder.sphere(props),
-        "trianglemesh" => builder.triangle_mesh(props),
-        "loopsubdiv" => builder.loop_subdivision_surface(props),
-        "plymesh" => builder.plymesh(props),
+        "sphere" => builder.sphere(props.with_ctx("shape", ty)),
+        "trianglemesh" => builder.triangle_mesh(props.with_ctx("shape", ty)),
+        "loopsubdiv" => builder.loop_subdivision_surface(props.with_ctx("shape", ty)),
+        "plymesh" => builder.plymesh(props.with_ctx("shape", ty)),
         _ => builder.unrecognized_shape(ty),
     },
 
     "Texture" <name:String> <kind:String> <ty:String> <props:Properties> => match ty {
-        "constant" => builder.constant_texture(name, props),
-        "scale" => builder.scale_texture(name, props),
-        "mix" => builder.mix_texture(name, props),
-        "checkerboard" => builder.checkerboard_texture(name, props),
-        "imagemap" => builder.image_texture(name, kind, props),
+        "constant" => builder.constant_texture(name, props.with_ctx("texture", ty)),
+        "scale" => builder.scale_texture(name, props.with_ctx("texture", ty)),
+        "mix" => builder.mix_texture(name, props.with_ctx("texture", ty)),
+        "checkerboard" => builder.checkerboard_texture(name, props.with_ctx("texture", ty)),
+        "imagemap" => builder.image_texture(name, kind, props.with_ctx("texture", ty)),
         _ => builder.unrecognized_texture(ty),
     },
 
-    "Material" <String> <Properties> => builder.material(<>),
-    "MakeNamedMaterial" <String> <Properties> => builder.make_named_material(<>),
+    "Material" <ty:String> <props:Properties> =>
+        builder.material(ty, props.with_ctx("material", ty)),
+    "MakeNamedMaterial" <name:String> <props:Properties> => {
+        let ty = props.get_string("type").unwrap();
+        builder.make_named_material(name, props.with_ctx("material", ty))
+    },
     "NamedMaterial" <String> => builder.named_material(<>),
 
     "LightSource" <ty:String> <props:Properties> => match ty {
-        "infinite" => builder.infinite_light(props),
+        "infinite" => builder.infinite_light(props.with_ctx("light", "infinite")),
         _ => builder.unrecognized_light(ty),
     },
     "AreaLightSource" <ty:String> <props:Properties> => match ty {
-        "diffuse" => builder.diffuse_area_light(props),
+        "diffuse" => builder.diffuse_area_light(props.with_ctx("light", "diffuse")),
         _ => builder.unrecognized_area_light(ty),
     },
 
@@ -64,7 +68,10 @@ Statement: () = {
 }
 
 Properties: Props<'input> = (PropName Values)* => Props {
-    map: <>.into_iter().map(|((ty, k), v)| (k, (ty, v))).collect()
+    map: <>.into_iter().map(|((ty, k), v)| (k, (ty, v))).collect(),
+    used: Default::default(),
+    ctx: "",
+    domain: "",
 };
 
 Values: Vec<Value<'input>> = {

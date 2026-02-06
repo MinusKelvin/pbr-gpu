@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
@@ -202,30 +203,6 @@ impl SceneBuilder {
     fn image_texture(&mut self, name: &str, kind: &str, props: Props) {
         let filename = props.get_string("filename").unwrap();
 
-        if let Some(v) = props.get_string("mapping")
-            && v != "uv"
-        {
-            println!("Note: imagemap mapping {v} is not supported");
-        }
-
-        if let Some(v) = props.get_string("wrap")
-            && v != "repeat"
-        {
-            println!("Note: imagemap wrapping {v} is not supported");
-        }
-
-        if props.get_float("scale").is_some() {
-            println!("Note: imagemap scale is not supported");
-        }
-
-        if props.type_of("udelta").is_some() || props.type_of("vdelta").is_some() {
-            println!("Note: imagemap uv-deltas not supported");
-        }
-
-        if props.type_of("uscale").is_some() || props.type_of("vscale").is_some() {
-            println!("Note: imagemap uv-scale not supported");
-        }
-
         let is_float = match kind {
             "spectrum" => false,
             "float" => true,
@@ -374,14 +351,7 @@ impl SceneBuilder {
 
     fn make_material(&mut self, ty: &str, props: Props) -> MaterialId {
         match ty {
-            "coateddiffuse" => {
-                if props.type_of("albedo").is_some() || props.type_of("thickness").is_some() {
-                    println!(
-                        "Note: coateddiffuse material defers to metallicworkflow, which does not support intervening volumetric media"
-                    );
-                }
-                self.make_material("metallicworkflow", props)
-            }
+            "coateddiffuse" => self.make_material("metallicworkflow", props),
             "coatedconductor" => {
                 println!("Note: coatedconductor material will be regular conductor");
                 let mut props = props;
@@ -427,10 +397,6 @@ impl SceneBuilder {
                     .add_diffuse_transmit_material(reflectance, transmittance, scale)
             }
             "conductor" => {
-                if props.type_of("reflectance").is_some() {
-                    println!("Cannot set conductor IOR based on reflectance");
-                    return self.error_material;
-                }
                 let ior_re = self
                     .spectrum_property(&props, "eta", 1.0, false)
                     .unwrap_or(self.scene.named_spectra["metal-Cu-eta"]);
@@ -547,9 +513,6 @@ impl SceneBuilder {
     }
 
     fn infinite_light(&mut self, props: Props) {
-        if props.type_of("illuminance").is_some() {
-            println!("Note: infinite light power by illuminance not yet supported");
-        }
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         if let Some(filename) = props.get_string("filename") {
             let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
@@ -569,9 +532,6 @@ impl SceneBuilder {
     }
 
     fn diffuse_area_light(&mut self, props: Props) {
-        if props.type_of("power").is_some() {
-            println!("Note: area light power not yet supported");
-        }
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         let two_sided = props.get_bool("twosided").unwrap_or(false);
         self.state.area_light = self
@@ -587,10 +547,6 @@ impl SceneBuilder {
         let radius = props.get_float("radius").unwrap_or(1.0);
         let z_min = props.get_float("zmin").unwrap_or(-radius);
         let z_max = props.get_float("zmax").unwrap_or(radius);
-
-        if props.type_of("alpha").is_some() {
-            println!("Node: alpha is not currently supported on spheres");
-        }
 
         let shape_id = self.scene.add_sphere(Sphere {
             z_min: (z_min / radius) as f32,
@@ -695,10 +651,6 @@ impl SceneBuilder {
             .expect("plymesh shape requires file name");
         let path = self.base.join(file);
 
-        if props.get_string("displacement").is_some() {
-            println!("Note: plymesh tessellation displacement map will not be applied.");
-        }
-
         let alpha = self.texture_property(&props, "alpha").unwrap_or_else(|| {
             let one = self.scene.add_constant_spectrum(1.0);
             self.scene.add_constant_texture(one)
@@ -747,31 +699,46 @@ impl SceneBuilder {
 #[derive(Default)]
 struct Props<'a> {
     map: HashMap<&'a str, (&'a str, Vec<Value<'a>>)>,
+    used: RefCell<HashSet<&'a str>>,
+    ctx: &'a str,
+    domain: &'a str,
 }
 
 impl<'a> Props<'a> {
+    fn with_ctx(mut self, domain: &'a str, ctx: &'a str) -> Self {
+        Props {
+            map: std::mem::take(&mut self.map),
+            used: std::mem::take(&mut self.used),
+            ctx,
+            domain,
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<&(&'a str, Vec<Value<'a>>)> {
+        let (k, v) = self.map.get_key_value(name)?;
+        self.used.borrow_mut().insert(k);
+        Some(v)
+    }
+
     fn type_of(&self, name: &str) -> Option<&'a str> {
-        self.map.get(name).map(|&(ty, _)| ty)
+        self.lookup(name).map(|&(ty, _)| ty)
     }
 
     fn get_float(&self, name: &str) -> Option<f64> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "float" || ty == "blackbody")
             .and_then(|(_, vals)| vals.get(0))
             .and_then(Value::as_number)
     }
 
     fn get_float_list(&self, name: &str) -> Option<Vec<f64>> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "float" || ty == "spectrum")
             .and_then(|(_, vals)| vals.into_iter().map(|v| v.as_number()).collect())
     }
 
     fn get_uint_list(&self, name: &str) -> Option<Vec<u32>> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "integer")
             .map(|(_, v)| {
                 v.into_iter()
@@ -781,8 +748,7 @@ impl<'a> Props<'a> {
     }
 
     fn get_vec3_list(&self, name: &str) -> Option<Vec<DVec3>> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "point3" || ty == "vector3" || ty == "normal" || ty == "rgb")
             .map(|(_, v)| {
                 v.chunks_exact(3)
@@ -798,8 +764,7 @@ impl<'a> Props<'a> {
     }
 
     fn get_vec2_list(&self, name: &str) -> Option<Vec<DVec2>> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "point2" || ty == "vector2")
             .map(|(_, v)| {
                 v.chunks_exact(2)
@@ -809,19 +774,34 @@ impl<'a> Props<'a> {
     }
 
     fn get_string(&self, name: &str) -> Option<&'a str> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "string" || ty == "texture" || ty == "spectrum")
             .and_then(|(_, v)| v.get(0))
             .and_then(Value::as_string)
     }
 
     fn get_bool(&self, name: &str) -> Option<bool> {
-        self.map
-            .get(name)
+        self.lookup(name)
             .filter(|&&(ty, _)| ty == "bool")
             .and_then(|(_, vals)| vals.get(0))
             .and_then(Value::as_bool)
+    }
+}
+
+impl Drop for Props<'_> {
+    #[track_caller]
+    fn drop(&mut self) {
+        let ctx = self.ctx;
+        let domain = self.domain;
+        if ctx.is_empty() {
+            return;
+        }
+        let used = self.used.borrow();
+        for &name in self.map.keys() {
+            if !used.contains(name) {
+                println!("Warning: Unknown property {name} in {ctx} {domain}");
+            }
+        }
     }
 }
 
