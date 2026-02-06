@@ -79,6 +79,7 @@ impl Scene {
         &mut self,
         shape: ShapeId,
         spectrum: SpectrumId,
+        two_sided: bool,
         alpha: TextureId,
     ) -> LightId {
         let id = LightId::new(LightType::Area, self.area_lights.len());
@@ -88,7 +89,7 @@ impl Scene {
             transform_node: NodeId::ZERO,
             shape,
             alpha,
-            two_sided: false as u32,
+            two_sided: two_sided as u32,
             light_sampling_path: 0,
         });
         id

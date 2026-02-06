@@ -83,13 +83,13 @@ impl Scene {
         normalize: bool,
     ) -> SpectrumId {
         let normalization_factor = match normalize {
-            true => {
-                // the additional divisors account for the way i've rescaled the color matching
-                // curves so that everything appears at about the right brightness
-                1.0 / blackbody(2.8977721e-3 / temperature * 1e9, temperature)
-                    / 683.002
-                    / 106.85677347943344
-            }
+            true => self.table_spectra[1]
+                .data
+                .iter()
+                .enumerate()
+                .map(|(i, &y)| y * blackbody(i as f32 + 360.0, temperature))
+                .sum::<f32>()
+                .recip(),
             false => 1.0,
         };
         let id = SpectrumId::new(SpectrumType::Blackbody, self.blackbody_spectra.len());

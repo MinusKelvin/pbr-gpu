@@ -79,7 +79,7 @@ pub struct SceneBuilder {
 struct State {
     transform: DMat4,
     material: MaterialId,
-    area_light: Option<SpectrumId>,
+    area_light: Option<(SpectrumId, bool)>,
 }
 
 impl SceneBuilder {
@@ -547,12 +547,16 @@ impl SceneBuilder {
     }
 
     fn infinite_light(&mut self, props: Props) {
+        if props.type_of("illuminance").is_some() {
+            println!("Note: infinite light power by illuminance not yet supported");
+        }
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         if let Some(filename) = props.get_string("filename") {
             let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
                 return;
             };
-            self.scene.add_image_light(self.state.transform, image, scale);
+            self.scene
+                .add_image_light(self.state.transform, image, scale);
         } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
             self.scene.add_uniform_light(spectrum);
         } else {
@@ -565,8 +569,14 @@ impl SceneBuilder {
     }
 
     fn diffuse_area_light(&mut self, props: Props) {
+        if props.type_of("power").is_some() {
+            println!("Note: area light power not yet supported");
+        }
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
-        self.state.area_light = self.spectrum_property(&props, "L", scale, true);
+        let two_sided = props.get_bool("twosided").unwrap_or(false);
+        self.state.area_light = self
+            .spectrum_property(&props, "L", scale, true)
+            .map(|l| (l, two_sided));
     }
 
     fn unrecognized_area_light(&mut self, ty: &str) {
@@ -594,9 +604,10 @@ impl SceneBuilder {
         let one = self.scene.add_constant_texture(one);
 
         let light = match self.state.area_light {
-            Some(spectrum) => {
+            Some((spectrum, two_sided)) => {
                 println!("Note: light sampling spheres is currently not supported");
-                self.scene.add_area_light(shape_id, spectrum, one)
+                self.scene
+                    .add_area_light(shape_id, spectrum, two_sided, one)
             }
             None => LightId::ZERO,
         };
@@ -720,7 +731,7 @@ impl SceneBuilder {
     fn create_primitives(&mut self, alpha: TextureId, shapes: impl Iterator<Item = ShapeId>) {
         self.current_prims.extend(shapes.map(|shape| {
             let light = match self.state.area_light {
-                Some(rgb) => self.scene.add_area_light(shape, rgb, alpha),
+                Some((rgb, two_sided)) => self.scene.add_area_light(shape, rgb, two_sided, alpha),
                 None => LightId::ZERO,
             };
             self.scene.add_primitive(PrimitiveNode {
@@ -803,6 +814,14 @@ impl<'a> Props<'a> {
             .filter(|&&(ty, _)| ty == "string" || ty == "texture" || ty == "spectrum")
             .and_then(|(_, v)| v.get(0))
             .and_then(Value::as_string)
+    }
+
+    fn get_bool(&self, name: &str) -> Option<bool> {
+        self.map
+            .get(name)
+            .filter(|&&(ty, _)| ty == "bool")
+            .and_then(|(_, vals)| vals.get(0))
+            .and_then(Value::as_bool)
     }
 }
 
