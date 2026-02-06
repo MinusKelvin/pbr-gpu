@@ -1,4 +1,5 @@
 use bytemuck::NoUninit;
+use glam::Vec2;
 
 use crate::scene::{Scene, SpectrumId};
 
@@ -49,15 +50,23 @@ impl Scene {
         id
     }
 
-    pub fn add_rgb_image_texture(&mut self, image: u32) -> TextureId {
+    pub fn add_rgb_image_texture(&mut self, image: u32, uv_map: UvMappingParams) -> TextureId {
         let id = TextureId::new(TextureType::ImageRgb, self.image_rgb_tex.len());
-        self.image_rgb_tex.push(ImageRgbTexture { image });
+        self.image_rgb_tex.push(ImageRgbTexture {
+            image,
+            uv_map,
+            _padding: 0,
+        });
         id
     }
 
-    pub fn add_float_image_texture(&mut self, image: u32) -> TextureId {
+    pub fn add_float_image_texture(&mut self, image: u32, uv_map: UvMappingParams) -> TextureId {
         let id = TextureId::new(TextureType::ImageFloat, self.image_float_tex.len());
-        self.image_float_tex.push(ImageFloatTexture { image });
+        self.image_float_tex.push(ImageFloatTexture {
+            image,
+            uv_map,
+            _padding: 0,
+        });
         id
     }
 
@@ -78,12 +87,24 @@ impl Scene {
         id
     }
 
-    pub fn add_checkerboard_texture(&mut self, even: TextureId, odd: TextureId) -> TextureId {
+    pub fn add_checkerboard_texture(
+        &mut self,
+        even: TextureId,
+        odd: TextureId,
+        uv_map: UvMappingParams,
+    ) -> TextureId {
         let id = TextureId::new(TextureType::Checkerboard, self.checkerboard_tex.len());
         self.checkerboard_tex
-            .push(CheckerboardTexture { even, odd });
+            .push(CheckerboardTexture { even, odd, uv_map });
         id
     }
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C, align(8))]
+pub struct UvMappingParams {
+    pub scale: Vec2,
+    pub delta: Vec2,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -96,12 +117,16 @@ pub struct ConstantTexture {
 #[repr(C)]
 pub struct ImageRgbTexture {
     pub image: u32,
+    pub _padding: u32,
+    pub uv_map: UvMappingParams,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct ImageFloatTexture {
     pub image: u32,
+    pub _padding: u32,
+    pub uv_map: UvMappingParams,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -124,4 +149,5 @@ pub struct MixTexture {
 pub struct CheckerboardTexture {
     pub even: TextureId,
     pub odd: TextureId,
+    pub uv_map: UvMappingParams,
 }

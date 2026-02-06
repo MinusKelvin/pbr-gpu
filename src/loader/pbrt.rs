@@ -7,13 +7,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use flate2::read::GzDecoder;
-use glam::{DMat3, DMat4, DVec2, DVec3, Vec3};
+use glam::{DMat3, DMat4, DVec2, DVec3, Vec2, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
     ImageLight, LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere,
-    TextureId, TriVertex,
+    TextureId, TriVertex, UvMappingParams,
 };
 use crate::spectrum::SpectrumData;
 use crate::{ProjectiveCamera, Transform};
@@ -212,13 +212,15 @@ impl SceneBuilder {
             }
         };
 
+        let uv_map = self.uv_mapping(&props);
+
         let Some(img) = self.scene.add_image(&self.base.join(filename), is_float) else {
             return;
         };
 
         let id = match is_float {
-            true => self.scene.add_float_image_texture(img),
-            false => self.scene.add_rgb_image_texture(img),
+            true => self.scene.add_float_image_texture(img, uv_map),
+            false => self.scene.add_rgb_image_texture(img, uv_map),
         };
         self.textures.insert(name.to_owned(), id);
     }
@@ -267,12 +269,33 @@ impl SceneBuilder {
             let spec = self.scene.add_constant_spectrum(0.0);
             self.scene.add_constant_texture(spec)
         });
-        let id = self.scene.add_checkerboard_texture(even, odd);
+        let uv_map = self.uv_mapping(&props);
+        let id = self.scene.add_checkerboard_texture(even, odd, uv_map);
         self.textures.insert(name.to_owned(), id);
     }
 
     fn unrecognized_texture(&mut self, ty: &str) {
         println!("Unrecognized texture type {ty}");
+    }
+
+    fn uv_mapping(&self, props: &Props) -> UvMappingParams {
+        let mut uv_map = UvMappingParams {
+            scale: Vec2::ONE,
+            delta: Vec2::ZERO,
+        };
+        if let Some(u_scale) = props.get_float("uscale") {
+            uv_map.scale.x = u_scale as f32;
+        }
+        if let Some(v_scale) = props.get_float("vscale") {
+            uv_map.scale.y = v_scale as f32;
+        }
+        if let Some(u_delta) = props.get_float("udelta") {
+            uv_map.delta.x = u_delta as f32;
+        }
+        if let Some(v_delta) = props.get_float("vdelta") {
+            uv_map.delta.y = v_delta as f32;
+        }
+        uv_map
     }
 
     fn spectrum_property(

@@ -37,10 +37,12 @@ struct ConstantTexture {
 
 struct ImageRgbTexture {
     image_index: u32,
+    uvmap: UvMappingParams,
 }
 
 struct ImageFloatTexture {
     image_index: u32,
+    uvmap: UvMappingParams,
 }
 
 struct ScaleTexture {
@@ -57,6 +59,12 @@ struct MixTexture {
 struct CheckerboardTexture {
     even: TextureId,
     odd: TextureId,
+    uvmap: UvMappingParams,
+}
+
+struct UvMappingParams {
+    scale: vec2f,
+    delta: vec2f,
 }
 
 fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f {
@@ -80,7 +88,7 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                 }
                 case TEXTURE_IMAGE_FLOAT {
                     let tex = IMAGE_FLOAT_TEXTURES[idx].image_index;
-                    let mapped = fract(uv);
+                    let mapped = fract(uv_map(IMAGE_FLOAT_TEXTURES[idx].uvmap, uv));
                     let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
                         * vec2f(textureDimensions(IMAGES[tex]));
                     let value = textureLoad(IMAGES[tex], vec2u(texel), 0).x;
@@ -89,7 +97,7 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                 }
                 case TEXTURE_IMAGE_RGB {
                     let tex = IMAGE_RGB_TEXTURES[idx].image_index;
-                    let mapped = fract(uv);
+                    let mapped = fract(uv_map(IMAGE_RGB_TEXTURES[idx].uvmap, uv));
                     let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
                         * vec2f(textureDimensions(IMAGES[tex]));
                     let rgb = textureLoad(IMAGES[tex], vec2u(texel), 0).xyz;
@@ -117,7 +125,8 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                     tex_i++;
                 }
                 case TEXTURE_CHECKERBOARD {
-                    let odd = (i32(floor(uv.x)) + i32(floor(uv.y))) % 2 != 0;
+                    let mapped = vec2i(floor(uv_map(IMAGE_RGB_TEXTURES[idx].uvmap, uv)));
+                    let odd = (mapped.x + mapped.y) % 2 != 0;
                     if odd {
                         tex_stack[tex_i] = CHECKERBOARD_TEXTURES[idx].odd;
                     } else {
@@ -164,4 +173,8 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
     }
 
     return data[0];
+}
+
+fn uv_map(uvmap: UvMappingParams, uv: vec2f) -> vec2f {
+    return uv * uvmap.scale + uvmap.delta;
 }
