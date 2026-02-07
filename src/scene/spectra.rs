@@ -1,5 +1,5 @@
 use bytemuck::NoUninit;
-use glam::Vec3;
+use glam::{FloatExt, Vec3};
 
 use crate::scene::Scene;
 
@@ -47,6 +47,48 @@ impl SpectrumId {
 }
 
 impl Scene {
+    pub fn spectrum_power(&self, spectrum: SpectrumId) -> f32 {
+        let y = &self.table_spectra[1];
+        match spectrum.ty() {
+            SpectrumType::Table => self.table_spectra[spectrum.idx()].data.iter().sum(),
+            SpectrumType::Constant => self.constant_spectra[spectrum.idx()].value,
+            SpectrumType::RgbAlbedo => {
+                self.rgb_albedo_spectra[spectrum.idx()].rgb.element_sum() / 3.0
+            }
+            SpectrumType::RgbIlluminant => {
+                self.rgb_illuminant_spectra[spectrum.idx()]
+                    .rgb
+                    .element_sum()
+                    / 3.0
+            }
+            SpectrumType::Blackbody => {
+                let bb = &self.blackbody_spectra[spectrum.idx()];
+                (360..831)
+                    .map(|wl| bb.scale * blackbody(wl as f32, bb.temperature))
+                    .sum::<f32>()
+            }
+            SpectrumType::PiecewiseLinear => {
+                let pwl = &self.piecewise_linear_spectra[spectrum.idx()];
+                let points: &[[f32; 2]] = bytemuck::cast_slice(
+                    &self.float_data[pwl.ptr as usize..pwl.ptr as usize + 2 * pwl.entries as usize],
+                );
+                points
+                    .windows(2)
+                    .map(|w| {
+                        let [l0, v0] = w[0];
+                        let [l1, v1] = w[1];
+                        let min = l0.clamp(360.0, 831.0) as u32;
+                        let max = l1.clamp(360.0, 831.0) as u32;
+                        (min..max)
+                            .map(|l| v0.lerp(v1, (l as f32 - l0) / (l0 - l1)))
+                            .sum::<f32>()
+                    })
+                    .sum::<f32>()
+            }
+            SpectrumType::RgbIorIm => 0.0,
+        }
+    }
+
     pub fn add_table_spectrum(&mut self, spectrum: TableSpectrum) -> SpectrumId {
         let id = SpectrumId::new(SpectrumType::Table, self.table_spectra.len());
         self.table_spectra.push(spectrum);

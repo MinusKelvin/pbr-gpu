@@ -47,6 +47,13 @@ impl Scene {
         }
     }
 
+    pub fn shape_area(&self, shape: ShapeId) -> f32 {
+        match shape.ty() {
+            ShapeType::Sphere => self.spheres[shape.idx()].area(),
+            ShapeType::Triangle => self.triangles[shape.idx()].area(&self.triangle_vertices),
+        }
+    }
+
     pub fn add_sphere(&mut self, sphere: Sphere) -> ShapeId {
         let id = ShapeId::new(ShapeType::Sphere, self.spheres.len());
         self.spheres.push(sphere);
@@ -86,6 +93,11 @@ impl Sphere {
             max: Vec3::new(1.0, 1.0, self.z_max),
         }
     }
+
+    fn area(&self) -> f32 {
+        // sphere sampling not supported yet
+        0.0
+    }
 }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
@@ -106,5 +118,10 @@ pub struct Triangle {
 impl Triangle {
     fn bounds(&self, verts: &[TriVertex]) -> Bounds {
         Bounds::from_points(self.vertices.iter().map(|&id| verts[id as usize].p))
+    }
+
+    fn area(&self, verts: &[TriVertex]) -> f32 {
+        let [p0, p1, p2] = self.vertices.map(|i| verts[i as usize].p);
+        (p1 - p0).cross(p2 - p0).length() / 2.0
     }
 }

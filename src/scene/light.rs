@@ -41,9 +41,30 @@ impl LightId {
     fn idx(self) -> usize {
         (self.0 & Self::IDX_MASK) as usize
     }
+
+    pub fn is_infinite(self) -> bool {
+        match self.ty() {
+            LightType::Uniform => true,
+            LightType::Image => true,
+            LightType::Area => false,
+        }
+    }
 }
 
 impl Scene {
+    pub fn light_power(&self, light: LightId) -> f32 {
+        match light.ty() {
+            LightType::Uniform => 0.0,
+            LightType::Image => 0.0,
+            LightType::Area => {
+                let light = &self.area_lights[light.idx()];
+                let luminance = self.spectrum_power(light.spectrum);
+                let area = self.shape_area(light.shape);
+                luminance * area
+            }
+        }
+    }
+
     pub fn add_uniform_light(&mut self, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Uniform, self.uniform_lights.len());
         self.infinite_lights.push(id);

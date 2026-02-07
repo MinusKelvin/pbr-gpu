@@ -86,6 +86,8 @@ pub struct Scene {
 
     pub uniform_light_samplers: Vec<UniformLightSampler>,
     pub uniform_light_sampler_data: Vec<LightId>,
+    pub power_light_samplers: Vec<PowerLightSampler>,
+    pub power_light_sampler_data: Vec<PlsAliasBucket>,
 
     pub root: Option<NodeId>,
     pub root_ls: Option<LightSamplerId>,
@@ -154,6 +156,8 @@ impl Scene {
         println!("Light Samplers");
         println!("  Uniform           {}", human_size_of(&self.uniform_light_samplers));
         println!("  Uniform Data      {}", human_size_of(&self.uniform_light_sampler_data));
+        println!("  Power             {}", human_size_of(&self.power_light_samplers));
+        println!("  Power Data        {}", human_size_of(&self.power_light_sampler_data));
         println!("Spectra");
         println!("  Table             {}", human_size_of(&self.table_spectra));
         println!("  Constant          {}", human_size_of(&self.constant_spectra));
@@ -216,6 +220,8 @@ impl Scene {
                 storage_buffer_entry(224),
                 storage_buffer_entry(225),
                 storage_buffer_entry(226),
+                storage_buffer_entry(227),
+                storage_buffer_entry(228),
             ],
         })
     }
@@ -268,6 +274,8 @@ impl Scene {
 
         let uniform_light_samplers = make_buffer(device, &self.uniform_light_samplers);
         let uniform_light_sampler_data = make_buffer(device, &self.uniform_light_sampler_data);
+        let power_light_samplers = make_buffer(device, &self.power_light_samplers);
+        let power_light_sampler_data = make_buffer(device, &self.power_light_sampler_data);
 
         let root = make_buffer(device, &[self.root.unwrap()]);
         let root_ls = make_buffer(device, &[self.root_ls.unwrap()]);
@@ -369,6 +377,8 @@ impl Scene {
                 make_entry(224, &root_ls),
                 make_entry(225, &uniform_light_samplers),
                 make_entry(226, &uniform_light_sampler_data),
+                make_entry(227, &power_light_samplers),
+                make_entry(228, &power_light_sampler_data),
             ],
         })
     }

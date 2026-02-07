@@ -17,7 +17,11 @@ fn light_sampler_uniform_sample(ls: UniformLightSampler, ref_p: vec3f, random: f
 }
 
 fn light_sampler_uniform_pmf(ls: UniformLightSampler, ref_p: vec3f, light: LightId) -> f32 {
-    if ls.count == 0 {
+    let path = light_sample_path(light);
+    if path >= ls.count {
+        return 0;
+    }
+    if UNIFORM_LS_DATA[path + ls.base].id != light.id {
         return 0;
     }
     return 1 / f32(ls.count);

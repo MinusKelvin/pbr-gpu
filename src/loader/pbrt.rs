@@ -51,7 +51,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let root = builder.scene.add_bvh(&builder.current_prims);
     builder.scene.root = Some(root);
 
-    let root_ls = builder.scene.add_uniform_light_sampler(&builder.lights);
+    let root_ls = builder.scene.add_power_light_sampler(&builder.lights);
     builder.scene.root_ls = Some(root_ls);
 
     eprintln!("Build scene in {:.3?}", t.elapsed());
