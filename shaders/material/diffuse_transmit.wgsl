@@ -3,6 +3,7 @@
 #import /spectrum.wgsl
 
 struct DiffuseTransmitMaterial {
+    normal_map: u32,
     reflectance: TextureId,
     transmittance: TextureId,
     scale: TextureId,

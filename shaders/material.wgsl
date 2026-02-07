@@ -96,8 +96,30 @@ fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths)
     bsdf.from_local = mat3x3f(
         tangent,
         cross(hit.n, tangent),
-        hit.n
+        hit.n,
     );
+
+    let normal_map = material_get_normal_map(material);
+    if normal_map != ~0u {
+        let mapped = fract(hit.uv);
+        let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
+            * vec2f(textureDimensions(IMAGES[normal_map]));
+        var ns = normalize(textureLoad(IMAGES[normal_map], vec2u(texel), 0).xyz * 2 - 1);
+        ns = bsdf.from_local * ns;
+
+        var tangent = hit.tangent - dot(hit.tangent, ns) * ns;
+        if dot(tangent, tangent) <= 1.0e-9 {
+            tangent = any_orthonormal_vector(ns);
+        } else {
+            tangent = normalize(tangent);
+        }
+
+        bsdf.from_local = mat3x3f(
+            tangent,
+            cross(ns, tangent),
+            ns,
+        );
+    }
 
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
@@ -123,6 +145,33 @@ fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths)
     }
 
     return bsdf;
+}
+
+fn material_get_normal_map(material: MaterialId) -> u32 {
+    let idx = material.id & MATERIAL_IDX_MASK;
+    switch material.id & MATERIAL_TAG_MASK {
+        case MATERIAL_DIFFUSE {
+            return DIFFUSE_MATERIALS[idx].normal_map;
+        }
+        case MATERIAL_DIFFUSE_TRANSMIT {
+            return DIFFUSE_TRANSMIT_MATERIALS[idx].normal_map;
+        }
+        case MATERIAL_CONDUCTOR {
+            return CONDUCTOR_MATERIALS[idx].normal_map;
+        }
+        case MATERIAL_DIELECTRIC {
+            return DIELECTRIC_MATERIALS[idx].normal_map;
+        }
+        case MATERIAL_THIN_DIELECTRIC {
+            return THIN_DIELECTRIC_MATERIALS[idx].normal_map;
+        }
+        case MATERIAL_METALLIC_WORKFLOW {
+            return METALLIC_WORKFLOW_MATERIALS[idx].normal_map;
+        }
+        default {
+            return ~0u;
+        }
+    }
 }
 
 fn bsdf_terminates_secondary_wavelengths(bsdf: Bsdf) -> bool {

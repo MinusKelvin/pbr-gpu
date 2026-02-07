@@ -4,6 +4,7 @@
 #import /util/distr.wgsl
 
 struct DiffuseMaterial {
+    normal_map: u32,
     texture: TextureId
 }
 

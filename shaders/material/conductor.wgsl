@@ -7,6 +7,7 @@
 #import trowbridge_reitz.wgsl
 
 struct ConductorMaterial {
+    normal_map: u32,
     ior_re: TextureId,
     ior_im: TextureId,
     roughness_u: TextureId,

@@ -44,9 +44,16 @@ impl MaterialId {
 }
 
 impl Scene {
-    pub fn add_diffuse_material(&mut self, texture: TextureId) -> MaterialId {
+    pub fn add_diffuse_material(
+        &mut self,
+        texture: TextureId,
+        normal_map: Option<u32>,
+    ) -> MaterialId {
         let id = MaterialId::new(MaterialType::Diffuse, self.diffuse_mat.len());
-        self.diffuse_mat.push(DiffuseMaterial { texture });
+        self.diffuse_mat.push(DiffuseMaterial {
+            texture,
+            normal_map: normal_map.unwrap_or(u32::MAX),
+        });
         id
     }
 
@@ -55,6 +62,7 @@ impl Scene {
         reflectance: TextureId,
         transmittance: TextureId,
         scale: TextureId,
+        normal_map: Option<u32>,
     ) -> MaterialId {
         let id = MaterialId::new(
             MaterialType::DiffuseTransmit,
@@ -64,6 +72,7 @@ impl Scene {
             reflectance,
             transmittance,
             scale,
+            normal_map: normal_map.unwrap_or(u32::MAX),
         });
         id
     }
@@ -74,6 +83,7 @@ impl Scene {
         ior_im: TextureId,
         u_roughness: TextureId,
         v_roughness: TextureId,
+        normal_map: Option<u32>,
     ) -> MaterialId {
         let id = MaterialId::new(MaterialType::Conductor, self.conductor_mat.len());
         self.conductor_mat.push(ConductorMaterial {
@@ -81,6 +91,7 @@ impl Scene {
             ior_im,
             u_roughness,
             v_roughness,
+            normal_map: normal_map.unwrap_or(u32::MAX),
         });
         id
     }
@@ -90,20 +101,28 @@ impl Scene {
         ior: SpectrumId,
         u_roughness: TextureId,
         v_roughness: TextureId,
+        normal_map: Option<u32>,
     ) -> MaterialId {
         let id = MaterialId::new(MaterialType::Dielectric, self.dielectric_mat.len());
         self.dielectric_mat.push(DielectricMaterial {
             ior,
             u_roughness,
             v_roughness,
+            normal_map: normal_map.unwrap_or(u32::MAX),
         });
         id
     }
 
-    pub fn add_thin_dielectric_material(&mut self, ior: SpectrumId) -> MaterialId {
+    pub fn add_thin_dielectric_material(
+        &mut self,
+        ior: SpectrumId,
+        normal_map: Option<u32>,
+    ) -> MaterialId {
         let id = MaterialId::new(MaterialType::ThinDielectric, self.thin_dielectric_mat.len());
-        self.thin_dielectric_mat
-            .push(ThinDielectricMaterial { ior });
+        self.thin_dielectric_mat.push(ThinDielectricMaterial {
+            ior,
+            normal_map: normal_map.unwrap_or(u32::MAX),
+        });
         id
     }
 
@@ -113,6 +132,7 @@ impl Scene {
         metallic: TextureId,
         u_roughness: TextureId,
         v_roughness: TextureId,
+        normal_map: Option<u32>,
     ) -> MaterialId {
         let id = MaterialId::new(
             MaterialType::MetallicWorkflow,
@@ -123,6 +143,7 @@ impl Scene {
             metallic,
             u_roughness,
             v_roughness,
+            normal_map: normal_map.unwrap_or(u32::MAX),
         });
         id
     }
@@ -142,12 +163,14 @@ impl Scene {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct DiffuseMaterial {
+    pub normal_map: u32,
     pub texture: TextureId,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct DiffuseTransmitMaterial {
+    pub normal_map: u32,
     pub reflectance: TextureId,
     pub transmittance: TextureId,
     pub scale: TextureId,
@@ -156,6 +179,7 @@ pub struct DiffuseTransmitMaterial {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct ConductorMaterial {
+    pub normal_map: u32,
     pub ior_re: TextureId,
     pub ior_im: TextureId,
     pub u_roughness: TextureId,
@@ -165,6 +189,7 @@ pub struct ConductorMaterial {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct DielectricMaterial {
+    pub normal_map: u32,
     pub ior: SpectrumId,
     pub u_roughness: TextureId,
     pub v_roughness: TextureId,
@@ -173,12 +198,14 @@ pub struct DielectricMaterial {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct ThinDielectricMaterial {
+    pub normal_map: u32,
     pub ior: SpectrumId,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct MetallicWorkflowMaterial {
+    pub normal_map: u32,
     pub base_color: TextureId,
     pub metallic: TextureId,
     pub u_roughness: TextureId,

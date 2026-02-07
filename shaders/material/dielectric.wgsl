@@ -7,6 +7,7 @@
 #import trowbridge_reitz.wgsl
 
 struct DielectricMaterial {
+    normal_map: u32,
     ior: SpectrumId,
     roughness_u: TextureId,
     roughness_v: TextureId,

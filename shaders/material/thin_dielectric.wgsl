@@ -7,6 +7,7 @@
 #import dielectric.wgsl
 
 struct ThinDielectricMaterial {
+    normal_map: u32,
     ior: SpectrumId,
 }
 

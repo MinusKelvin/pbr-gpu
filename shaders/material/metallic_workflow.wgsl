@@ -7,6 +7,7 @@
 #import trowbridge_reitz.wgsl
 
 struct MetallicWorkflowMaterial {
+    normal_map: u32,
     base_color: TextureId,
     metallic: TextureId,
     roughness_u: TextureId,

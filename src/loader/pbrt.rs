@@ -24,7 +24,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let mut scene = Scene::new(spectrum_data);
     let spectrum = scene.add_rgb_albedo_spectrum(Vec3::new(1.0, 0.0, 1.0));
     let error_texture = scene.add_constant_texture(spectrum);
-    let error_material = scene.add_diffuse_material(error_texture);
+    let error_material = scene.add_diffuse_material(error_texture, None);
 
     let mut builder = SceneBuilder {
         base: path.parent().unwrap().to_path_buf(),
@@ -220,12 +220,17 @@ impl SceneBuilder {
 
         let uv_map = self.uv_mapping(&props);
 
-        let Some(img) = self.scene.add_image(&self.base.join(filename), is_float) else {
+        let Some(img) = self
+            .scene
+            .add_image(&self.base.join(filename), is_float, false)
+        else {
             return;
         };
 
         let id = match is_float {
-            true => self.scene.add_float_image_texture(img, scale, invert, uv_map),
+            true => self
+                .scene
+                .add_float_image_texture(img, scale, invert, uv_map),
             false => self.scene.add_rgb_image_texture(img, scale, invert, uv_map),
         };
         self.textures.insert(name.to_owned(), id);
@@ -416,7 +421,10 @@ impl SceneBuilder {
                         let spec = self.scene.add_constant_spectrum(0.5);
                         self.scene.add_constant_texture(spec)
                     });
-                self.scene.add_diffuse_material(texture)
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
+                self.scene.add_diffuse_material(texture, normal_map)
             }
             "diffusetransmission" => {
                 let reflectance =
@@ -435,9 +443,16 @@ impl SceneBuilder {
                     let spec = self.scene.add_constant_spectrum(1.0);
                     self.scene.add_constant_texture(spec)
                 });
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
 
-                self.scene
-                    .add_diffuse_transmit_material(reflectance, transmittance, scale)
+                self.scene.add_diffuse_transmit_material(
+                    reflectance,
+                    transmittance,
+                    scale,
+                    normal_map,
+                )
             }
             "conductor" => {
                 let refl = self.texture_property(&props, "reflectance");
@@ -464,9 +479,8 @@ impl SceneBuilder {
 
                 let u_roughness = self.texture_property(&props, "uroughness");
                 let v_roughness = self.texture_property(&props, "vroughness");
-                let (u_roughness, v_roughness) = u_roughness
-                    .zip(v_roughness)
-                    .unwrap_or_else(|| {
+                let (u_roughness, v_roughness) =
+                    u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
                                 .unwrap_or_else(|| {
@@ -476,8 +490,17 @@ impl SceneBuilder {
                         (roughness, roughness)
                     });
 
-                self.scene
-                    .add_conductor_material(ior_re, ior_im, u_roughness, v_roughness)
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
+
+                self.scene.add_conductor_material(
+                    ior_re,
+                    ior_im,
+                    u_roughness,
+                    v_roughness,
+                    normal_map,
+                )
             }
             "dielectric" => {
                 let ior = self
@@ -486,9 +509,8 @@ impl SceneBuilder {
 
                 let u_roughness = self.texture_property(&props, "uroughness");
                 let v_roughness = self.texture_property(&props, "vroughness");
-                let (u_roughness, v_roughness) = u_roughness
-                    .zip(v_roughness)
-                    .unwrap_or_else(|| {
+                let (u_roughness, v_roughness) =
+                    u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
                                 .unwrap_or_else(|| {
@@ -498,15 +520,22 @@ impl SceneBuilder {
                         (roughness, roughness)
                     });
 
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
+
                 self.scene
-                    .add_dielectric_material(ior, u_roughness, v_roughness)
+                    .add_dielectric_material(ior, u_roughness, v_roughness, normal_map)
             }
             "thindielectric" => {
                 let ior = self
                     .spectrum_property(&props, "eta", 1.0, false)
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
 
-                self.scene.add_thin_dielectric_material(ior)
+                self.scene.add_thin_dielectric_material(ior, normal_map)
             }
             "metallicworkflow" => {
                 let base_color =
@@ -525,9 +554,8 @@ impl SceneBuilder {
 
                 let u_roughness = self.texture_property(&props, "uroughness");
                 let v_roughness = self.texture_property(&props, "vroughness");
-                let (u_roughness, v_roughness) = u_roughness
-                    .zip(v_roughness)
-                    .unwrap_or_else(|| {
+                let (u_roughness, v_roughness) =
+                    u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
                                 .unwrap_or_else(|| {
@@ -537,11 +565,16 @@ impl SceneBuilder {
                         (roughness, roughness)
                     });
 
+                let normal_map = props.get_string("normalmap").and_then(|filename| {
+                    self.scene.add_image(&self.base.join(filename), false, true)
+                });
+
                 self.scene.add_metallic_workflow_material(
                     base_color,
                     metallic,
                     u_roughness,
                     v_roughness,
+                    normal_map,
                 )
             }
             "mix" => {
@@ -591,7 +624,10 @@ impl SceneBuilder {
     fn infinite_light(&mut self, props: Props) {
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         if let Some(filename) = props.get_string("filename") {
-            let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
+            let Some(image) = self
+                .scene
+                .add_image(&self.base.join(filename), false, false)
+            else {
                 return;
             };
             let light = self

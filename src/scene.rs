@@ -99,6 +99,7 @@ pub enum ImageData {
     Float(Luma32FImage),
     FloatRgb(Rgba32FImage),
     Srgb(RgbaImage),
+    UnormRgb(RgbaImage),
 }
 
 impl Scene {
@@ -139,6 +140,7 @@ impl Scene {
         println!("  Image data        {}", human_size(self.images.iter().map(|img| match img {
             ImageData::Float(img) => std::mem::size_of_val(img.as_raw().as_slice()),
             ImageData::FloatRgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
+            ImageData::UnormRgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
             ImageData::Srgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
         }).sum()));
         println!("Materials");
@@ -307,6 +309,12 @@ impl Scene {
                         wgpu::TextureFormat::Rgba8UnormSrgb,
                         bytemuck::cast_slice(&img),
                     ),
+                    ImageData::UnormRgb(img) => (
+                        img.width(),
+                        img.height(),
+                        wgpu::TextureFormat::Rgba8Unorm,
+                        bytemuck::cast_slice(&img),
+                    ),
                 };
 
                 let texture = device.create_texture_with_data(
@@ -383,7 +391,7 @@ impl Scene {
         })
     }
 
-    pub fn add_image(&mut self, path: &Path, float: bool) -> Option<u32> {
+    pub fn add_image(&mut self, path: &Path, float: bool, no_gamma: bool) -> Option<u32> {
         let img = match path.extension().and_then(|s| s.to_str()) {
             Some("pfm") => load_pfm_image(path),
             _ => image::open(path),
@@ -416,6 +424,7 @@ impl Scene {
                 ImageData::Float(data)
             }
             _ if img.as_flat_samples_f32().is_some() => ImageData::FloatRgb(img.to_rgba32f()),
+            _ if no_gamma => ImageData::UnormRgb(img.to_rgba8()),
             _ => ImageData::Srgb(img.to_rgba8()),
         });
         Some(id)
@@ -430,6 +439,11 @@ impl Scene {
                 img.pixels().map(|c| c.to_luma().0[0]).collect::<Vec<_>>(),
             ),
             ImageData::Srgb(img) => (
+                img.width(),
+                img.height(),
+                img.pixels().map(|c| c.to_luma().0[0] as f32).collect(),
+            ),
+            ImageData::UnormRgb(img) => (
                 img.width(),
                 img.height(),
                 img.pixels().map(|c| c.to_luma().0[0] as f32).collect(),
