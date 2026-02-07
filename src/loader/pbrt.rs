@@ -12,8 +12,8 @@ use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
-     LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere,
-    TextureId, TriVertex, UvMappingParams,
+    LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere, TextureId,
+    TriVertex, UvMappingParams,
 };
 use crate::spectrum::SpectrumData;
 use crate::{ProjectiveCamera, Transform};
@@ -431,21 +431,25 @@ impl SceneBuilder {
                     .add_diffuse_transmit_material(reflectance, transmittance, scale)
             }
             "conductor" => {
-                let refl = props.get_vec3_list("reflectance");
-                if let Some(ty) = props.type_of("reflectance") && ty != "rgb" {
-                    println!("Unrecognized conductor reflectance specification type {ty}");
-                }
+                let refl = self.texture_property(&props, "reflectance");
 
                 let (ior_re, ior_im) = match refl {
-                    Some(refl) => (
-                        self.scene.add_constant_spectrum(1.0),
-                        self.scene.add_rgb_ior_im_spectrum(refl[0].as_vec3()),
-                    ),
+                    Some(refl) => {
+                        let one = self.scene.add_constant_spectrum(1.0);
+                        (
+                            self.scene.add_constant_texture(one),
+                            self.scene.add_conductor_refl_texture(refl),
+                        )
+                    }
                     None => (
-                        self.spectrum_property(&props, "eta", 1.0, false)
-                            .unwrap_or(self.scene.named_spectra["metal-Cu-eta"]),
-                        self.spectrum_property(&props, "k", 1.0, false)
-                            .unwrap_or(self.scene.named_spectra["metal-Cu-k"]),
+                        self.texture_property(&props, "eta").unwrap_or_else(|| {
+                            let spectrum = self.scene.named_spectra["metal-Cu-eta"];
+                            self.scene.add_constant_texture(spectrum)
+                        }),
+                        self.texture_property(&props, "k").unwrap_or_else(|| {
+                            let spectrum = self.scene.named_spectra["metal-Cu-k"];
+                            self.scene.add_constant_texture(spectrum)
+                        }),
                     ),
                 };
 

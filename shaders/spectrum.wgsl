@@ -18,8 +18,6 @@ var<storage> RGB_ILLUMINANT_SPECTRA: array<RgbIlluminantSpectrum>;
 var<storage> BLACKBODY_SPECTRA: array<BlackbodySpectrum>;
 @group(0) @binding(165)
 var<storage> PIECEWISE_LINEAR_SPECTRA: array<PiecewiseLinearSpectrum>;
-@group(0) @binding(166)
-var<storage> RGB_IOR_IM_SPECTRA: array<RgbIorImSpectrum>;
 
 const SPECTRUM_TAG_BITS: u32 = 3;
 const SPECTRUM_TAG_SHIFT: u32 = 32 - SPECTRUM_TAG_BITS;
@@ -32,7 +30,6 @@ const SPECTRUM_RGB_ALBEDO: u32 = 2 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_RGB_ILLUMINANT: u32 = 3 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_BLACKBODY: u32 = 4 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_PIECEWISE_LINEAR: u32 = 5 << SPECTRUM_TAG_SHIFT;
-const SPECTRUM_RGB_IOR_IM: u32 = 6 << SPECTRUM_TAG_SHIFT;
 
 @group(1) @binding(32)
 var RGB_TO_COEFF: texture_3d<f32>;
@@ -72,10 +69,6 @@ struct PiecewiseLinearSpectrum {
     entries: u32,
 }
 
-struct RgbIorImSpectrum {
-    rgb: vec3f,
-}
-
 fn spectrum_sample(spectrum: SpectrumId, wl: Wavelengths) -> vec4f {
     let idx = spectrum.id & SPECTRUM_IDX_MASK;
     switch spectrum.id & SPECTRUM_TAG_MASK {
@@ -96,9 +89,6 @@ fn spectrum_sample(spectrum: SpectrumId, wl: Wavelengths) -> vec4f {
         }
         case SPECTRUM_PIECEWISE_LINEAR {
             return spectrum_piecewise_linear_sample(PIECEWISE_LINEAR_SPECTRA[idx], wl);
-        }
-        case SPECTRUM_RGB_IOR_IM {
-            return spectrum_rgb_ior_im_sample(RGB_IOR_IM_SPECTRA[idx], wl);
         }
         default {
             // unreachable
@@ -193,9 +183,4 @@ fn spectrum_piecewise_linear_sample(spectrum: PiecewiseLinearSpectrum, wl: Wavel
     );
 
     return mix(v0, v1, t);
-}
-
-fn spectrum_rgb_ior_im_sample(spectrum: RgbIorImSpectrum, wl: Wavelengths) -> vec4f {
-    let r = spectrum_rgb_albedo_sample(RgbAlbedoSpectrum(spectrum.rgb), wl);
-    return 2 * sqrt(r) / sqrt(1 - r);
 }

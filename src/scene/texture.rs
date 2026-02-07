@@ -16,6 +16,7 @@ enum TextureType {
     Scale = 4 << TextureId::TAG_SHIFT,
     Mix = 5 << TextureId::TAG_SHIFT,
     Checkerboard = 6 << TextureId::TAG_SHIFT,
+    ConductorRefl = 7 << TextureId::TAG_SHIFT,
 }
 
 #[allow(unused)]
@@ -98,6 +99,12 @@ impl Scene {
             .push(CheckerboardTexture { even, odd, uv_map });
         id
     }
+
+    pub fn add_conductor_refl_texture(&mut self, tex: TextureId) -> TextureId {
+        let id = TextureId::new(TextureType::ConductorRefl, self.conductor_refl_tex.len());
+        self.conductor_refl_tex.push(ConductorReflTexture { tex });
+        id
+    }
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -150,4 +157,10 @@ pub struct CheckerboardTexture {
     pub even: TextureId,
     pub odd: TextureId,
     pub uv_map: UvMappingParams,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct ConductorReflTexture {
+    pub tex: TextureId,
 }

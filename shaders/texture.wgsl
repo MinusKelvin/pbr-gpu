@@ -15,6 +15,7 @@ const TEXTURE_IMAGE_RGB: u32 = 3 << TEXTURE_TAG_SHIFT;
 const TEXTURE_SCALE: u32 = 4 << TEXTURE_TAG_SHIFT;
 const TEXTURE_MIX: u32 = 5 << TEXTURE_TAG_SHIFT;
 const TEXTURE_CHECKERBOARD: u32 = 6 << TEXTURE_TAG_SHIFT;
+const TEXTURE_CONDUCTOR_REFL: u32 = 7 << TEXTURE_TAG_SHIFT;
 
 @group(0) @binding(64)
 var<storage> CONSTANT_TEXTURES: array<ConstantTexture>;
@@ -30,6 +31,8 @@ var<storage> SCALE_TEXTURES: array<ScaleTexture>;
 var<storage> MIX_TEXTURES: array<MixTexture>;
 @group(0) @binding(71)
 var<storage> CHECKERBOARD_TEXTURES: array<CheckerboardTexture>;
+@group(0) @binding(72)
+var<storage> CONDUCTOR_REFL_TEXTURES: array<ConductorReflTexture>;
 
 struct ConstantTexture {
     spectrum: SpectrumId
@@ -60,6 +63,10 @@ struct CheckerboardTexture {
     even: TextureId,
     odd: TextureId,
     uvmap: UvMappingParams,
+}
+
+struct ConductorReflTexture {
+    tex: TextureId,
 }
 
 struct UvMappingParams {
@@ -125,13 +132,20 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                     tex_i++;
                 }
                 case TEXTURE_CHECKERBOARD {
-                    let mapped = vec2i(floor(uv_map(IMAGE_RGB_TEXTURES[idx].uvmap, uv)));
+                    let mapped = vec2i(floor(uv_map(CHECKERBOARD_TEXTURES[idx].uvmap, uv)));
                     let odd = (mapped.x + mapped.y) % 2 != 0;
                     if odd {
                         tex_stack[tex_i] = CHECKERBOARD_TEXTURES[idx].odd;
                     } else {
                         tex_stack[tex_i] = CHECKERBOARD_TEXTURES[idx].even;
                     }
+                    tex_i++;
+                }
+                case TEXTURE_CONDUCTOR_REFL {
+                    tex_stack[tex_i].id |= TEXTURE_IDX_MASK;
+                    tex_i++;
+
+                    tex_stack[tex_i] = CONDUCTOR_REFL_TEXTURES[idx].tex;
                     tex_i++;
                 }
                 default {
@@ -158,6 +172,12 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                     data_i--;
                     let amount = data[data_i];
                     data[data_i] = mix(tex1, tex2, amount);
+                    data_i++;
+                }
+                case TEXTURE_CONDUCTOR_REFL {
+                    data_i--;
+                    let r = data[data_i];
+                    data[data_i] = 2 * sqrt(r) / sqrt(1 - r);
                     data_i++;
                 }
                 default {

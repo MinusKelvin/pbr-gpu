@@ -57,6 +57,7 @@ pub struct Scene {
     pub scale_tex: Vec<ScaleTexture>,
     pub mix_tex: Vec<MixTexture>,
     pub checkerboard_tex: Vec<CheckerboardTexture>,
+    pub conductor_refl_tex: Vec<ConductorReflTexture>,
 
     pub images: Vec<ImageData>,
 
@@ -80,7 +81,6 @@ pub struct Scene {
     pub rgb_illuminant_spectra: Vec<RgbIlluminantSpectrum>,
     pub blackbody_spectra: Vec<BlackbodySpectrum>,
     pub piecewise_linear_spectra: Vec<PiecewiseLinearSpectrum>,
-    pub rgb_ior_im_spectra: Vec<RgbIorImSpectrum>,
 
     pub float_data: Vec<f32>,
 
@@ -135,6 +135,7 @@ impl Scene {
         println!("  Scale             {}", human_size_of(&self.scale_tex));
         println!("  Mix               {}", human_size_of(&self.mix_tex));
         println!("  Checkerboard      {}", human_size_of(&self.mix_tex));
+        println!("  Conductor Refl    {}", human_size_of(&self.conductor_refl_tex));
         println!("  Image data        {}", human_size(self.images.iter().map(|img| match img {
             ImageData::Float(img) => std::mem::size_of_val(img.as_raw().as_slice()),
             ImageData::FloatRgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
@@ -165,7 +166,6 @@ impl Scene {
         println!("  Rgb Illuminant    {}", human_size_of(&self.rgb_illuminant_spectra));
         println!("  Blackbody         {}", human_size_of(&self.blackbody_spectra));
         println!("  Piecewise Linear  {}", human_size_of(&self.piecewise_linear_spectra));
-        println!("  Rgb Conductor     {}", human_size_of(&self.rgb_ior_im_spectra));
         println!("Misc Data           {}", human_size_of(&self.float_data));
     }
 
@@ -198,6 +198,7 @@ impl Scene {
                 storage_buffer_entry(69),
                 storage_buffer_entry(70),
                 storage_buffer_entry(71),
+                storage_buffer_entry(72),
                 storage_buffer_entry(96),
                 storage_buffer_entry(97),
                 storage_buffer_entry(98),
@@ -215,7 +216,6 @@ impl Scene {
                 storage_buffer_entry(163),
                 storage_buffer_entry(164),
                 storage_buffer_entry(165),
-                storage_buffer_entry(166),
                 storage_buffer_entry(192),
                 storage_buffer_entry(224),
                 storage_buffer_entry(225),
@@ -247,6 +247,7 @@ impl Scene {
         let scale_tex = make_buffer(device, &self.scale_tex);
         let mix_tex = make_buffer(device, &self.mix_tex);
         let checkerboard_tex = make_buffer(device, &self.checkerboard_tex);
+        let conductor_refl_tex = make_buffer(device, &self.conductor_refl_tex);
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
@@ -268,7 +269,6 @@ impl Scene {
         let rgb_illuminant_spectra = make_buffer(device, &self.rgb_illuminant_spectra);
         let blackbody_spectra = make_buffer(device, &self.blackbody_spectra);
         let piecewise_linear_spectra = make_buffer(device, &self.piecewise_linear_spectra);
-        let rgb_ior_im_spectra = make_buffer(device, &self.rgb_ior_im_spectra);
 
         let float_data = make_buffer(device, &self.float_data);
 
@@ -355,6 +355,7 @@ impl Scene {
                 make_entry(69, &scale_tex),
                 make_entry(70, &mix_tex),
                 make_entry(71, &checkerboard_tex),
+                make_entry(72, &conductor_refl_tex),
                 make_entry(96, &diffuse_mat),
                 make_entry(97, &diffuse_transmit_mat),
                 make_entry(98, &conductor_mat),
@@ -372,7 +373,6 @@ impl Scene {
                 make_entry(163, &rgb_illuminant_spectra),
                 make_entry(164, &blackbody_spectra),
                 make_entry(165, &piecewise_linear_spectra),
-                make_entry(166, &rgb_ior_im_spectra),
                 make_entry(192, &float_data),
                 make_entry(224, &root_ls),
                 make_entry(225, &uniform_light_samplers),

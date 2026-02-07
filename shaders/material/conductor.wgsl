@@ -7,8 +7,8 @@
 #import trowbridge_reitz.wgsl
 
 struct ConductorMaterial {
-    ior_re: SpectrumId,
-    ior_im: SpectrumId,
+    ior_re: TextureId,
+    ior_im: TextureId,
     roughness_u: TextureId,
     roughness_v: TextureId,
 }
@@ -16,8 +16,8 @@ struct ConductorMaterial {
 fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavelengths) -> Bsdf {
     var bsdf: Bsdf;
     bsdf.id = BSDF_CONDUCTOR;
-    bsdf.v0 = spectrum_sample(material.ior_re, wl);
-    bsdf.v1 = -spectrum_sample(material.ior_im, wl);
+    bsdf.v0 = texture_evaluate(material.ior_re, uv, wl);
+    bsdf.v1 = -texture_evaluate(material.ior_im, uv, wl);
     bsdf.v2.x = texture_evaluate(material.roughness_u, uv, wl).x;
     bsdf.v2.y = texture_evaluate(material.roughness_v, uv, wl).x;
     bsdf.v2 = vec4f(vec2f(length(bsdf.v2.xy)), 0, 0);

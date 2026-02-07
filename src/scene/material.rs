@@ -70,8 +70,8 @@ impl Scene {
 
     pub fn add_conductor_material(
         &mut self,
-        ior_re: SpectrumId,
-        ior_im: SpectrumId,
+        ior_re: TextureId,
+        ior_im: TextureId,
         u_roughness: TextureId,
         v_roughness: TextureId,
     ) -> MaterialId {
@@ -156,8 +156,8 @@ pub struct DiffuseTransmitMaterial {
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
 pub struct ConductorMaterial {
-    pub ior_re: SpectrumId,
-    pub ior_im: SpectrumId,
+    pub ior_re: TextureId,
+    pub ior_im: TextureId,
     pub u_roughness: TextureId,
     pub v_roughness: TextureId,
 }
