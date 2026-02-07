@@ -126,7 +126,7 @@ fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
                         var h = bitcast<u32>(result.t);
                         h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.o))).w;
                         h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.d))).w;
-                        let u = f32(h) / 4294967296;
+                        let u = bits_to_f32(h);
 
                         result.hit = u < alpha;
                     }

@@ -31,7 +31,7 @@ fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: ve
     let alpha = texture_evaluate(light.alpha, shape_sample.uv, Wavelengths()).x;
     if alpha < 1 {
         let h = hash_4d(vec4u(980736245, bitcast<vec3u>(shape_sample.p))).z;
-        let u = f32(h) / 4294967296;
+        let u = bits_to_f32(h);
 
         if u >= alpha {
             return LightSample();

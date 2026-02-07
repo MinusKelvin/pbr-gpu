@@ -36,6 +36,10 @@ fn hash_4d(x: vec4u) -> vec4u {
     return v;
 }
 
+fn bits_to_f32(bits: u32) -> f32 {
+    return bitcast<f32>(bits >> 9 | 0x3f800000) - 1;
+}
+
 fn copysign(magnitude: f32, sign: f32) -> f32 {
     return bitcast<f32>(bitcast<u32>(magnitude) & 0x7FFFFFFFu | bitcast<u32>(sign) & 0x80000000u);
 }

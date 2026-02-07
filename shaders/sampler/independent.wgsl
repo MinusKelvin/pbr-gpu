@@ -17,12 +17,12 @@ fn _sampler_next() -> vec3u {
 
 fn sample_1d() -> f32 {
     let bits = _sampler_next().x;
-    return bitcast<f32>(bits >> 9 | 0x3f800000) - 1;
+    return bits_to_f32(bits);
 }
 
 fn sample_2d() -> vec2f {
     let bits = _sampler_next().xy;
-    return bitcast<vec2f>(bits >> vec2(9) | vec2(0x3f800000)) - 1;
+    return vec2(bits_to_f32(bits.x), bits_to_f32(bits.y));
 }
 
 fn sample_pixel() -> vec2f {
