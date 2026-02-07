@@ -25,7 +25,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         // add light emitted by surface
-        radiance += throughput * light_emission(result.light, result, wl);
+        radiance += throughput * light_emission(result.light, ray, result, wl);
 
         // enforce termination
         depth += 1;
@@ -39,7 +39,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         // evaluate bsdf
         throughput *= bsdf_f(bsdf, -ray.d, new_dir)
-            * abs(dot(bsdf_normal(bsdf), light_sample.dir))
+            * abs(dot(bsdf_normal(bsdf), new_dir))
             / (1 / (2 * TWO_PI));
 
         // spawn new ray
