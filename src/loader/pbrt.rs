@@ -12,7 +12,7 @@ use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
-    ImageLight, LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere,
+     LightId, MaterialId, NodeId, PrimitiveNode, Scene, ShapeId, SpectrumId, Sphere,
     TextureId, TriVertex, UvMappingParams,
 };
 use crate::spectrum::SpectrumData;
@@ -37,6 +37,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
         render_options: RenderOptions::default(),
         scene,
         current_prims: vec![],
+        lights: vec![],
         objects: HashMap::new(),
         textures: HashMap::new(),
         materials: HashMap::new(),
@@ -47,10 +48,11 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
 
-    builder.scene.workaround_empty_buffer_nonsense();
-
     let root = builder.scene.add_bvh(&builder.current_prims);
     builder.scene.root = Some(root);
+
+    let root_ls = builder.scene.add_uniform_light_sampler(&builder.lights);
+    builder.scene.root_ls = Some(root_ls);
 
     eprintln!("Build scene in {:.3?}", t.elapsed());
 
@@ -68,6 +70,7 @@ pub struct SceneBuilder {
     scene: Scene,
 
     current_prims: Vec<NodeId>,
+    lights: Vec<LightId>,
 
     objects: HashMap<String, NodeId>,
     textures: HashMap<String, TextureId>,
@@ -575,10 +578,13 @@ impl SceneBuilder {
             let Some(image) = self.scene.add_image(&self.base.join(filename), false) else {
                 return;
             };
-            self.scene
+            let light = self
+                .scene
                 .add_image_light(self.state.transform, image, scale);
+            self.lights.push(light);
         } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
-            self.scene.add_uniform_light(spectrum);
+            let light = self.scene.add_uniform_light(spectrum);
+            self.lights.push(light);
         } else {
             println!("Infinite light specifies neither image nor spectrum?");
         }
@@ -641,6 +647,7 @@ impl SceneBuilder {
 
         if light != LightId::ZERO {
             self.scene.set_area_light_transform(light, transformed);
+            self.lights.push(light);
         }
 
         self.current_prims.push(transformed);
@@ -743,6 +750,9 @@ impl SceneBuilder {
                 Some((rgb, two_sided)) => self.scene.add_area_light(shape, rgb, two_sided, alpha),
                 None => LightId::ZERO,
             };
+            if light != LightId::ZERO {
+                self.lights.push(light);
+            }
             self.scene.add_primitive(PrimitiveNode {
                 shape,
                 material: self.state.material,

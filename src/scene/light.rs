@@ -47,10 +47,9 @@ impl Scene {
     pub fn add_uniform_light(&mut self, spectrum: SpectrumId) -> LightId {
         let id = LightId::new(LightType::Uniform, self.uniform_lights.len());
         self.infinite_lights.push(id);
-        self.all_lights.push(id);
         self.uniform_lights.push(UniformLight {
             spectrum,
-            light_sampling_path: 0,
+            light_sampling_path: u32::MAX,
         });
         id
     }
@@ -60,7 +59,6 @@ impl Scene {
 
         let id = LightId::new(LightType::Image, self.image_lights.len());
         self.infinite_lights.push(id);
-        self.all_lights.push(id);
         self.image_lights.push(ImageLight {
             transform: Transform {
                 m: transform.as_mat4(),
@@ -68,7 +66,7 @@ impl Scene {
             },
             image,
             scale,
-            light_sampling_path: 0,
+            light_sampling_path: u32::MAX,
             sampling_distr,
             _padding: [0; 2],
         });
@@ -83,14 +81,13 @@ impl Scene {
         alpha: TextureId,
     ) -> LightId {
         let id = LightId::new(LightType::Area, self.area_lights.len());
-        self.all_lights.push(id);
         self.area_lights.push(AreaLight {
             spectrum,
             transform_node: NodeId::ZERO,
             shape,
             alpha,
             two_sided: two_sided as u32,
-            light_sampling_path: 0,
+            light_sampling_path: u32::MAX,
         });
         id
     }

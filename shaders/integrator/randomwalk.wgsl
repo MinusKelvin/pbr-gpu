@@ -18,7 +18,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         if !result.hit {
             // add infinite lights and finish
-            for (var i = 0u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+            for (var i = 1u; i < arrayLength(&INFINITE_LIGHTS); i++) {
                 radiance += throughput * inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
             }
             break;

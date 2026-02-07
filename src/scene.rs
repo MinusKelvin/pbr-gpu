@@ -21,6 +21,7 @@ use crate::spectrum::SpectrumData;
 use crate::storage_buffer_entry;
 
 mod light;
+mod light_sampler;
 mod material;
 mod node;
 mod other;
@@ -29,6 +30,7 @@ mod spectra;
 mod texture;
 
 pub use self::light::*;
+pub use self::light_sampler::*;
 pub use self::material::*;
 pub use self::node::*;
 pub use self::other::*;
@@ -67,7 +69,6 @@ pub struct Scene {
     pub mix_mat: Vec<MixMaterial>,
 
     pub infinite_lights: Vec<LightId>,
-    pub all_lights: Vec<LightId>,
 
     pub uniform_lights: Vec<UniformLight>,
     pub image_lights: Vec<ImageLight>,
@@ -83,7 +84,11 @@ pub struct Scene {
 
     pub float_data: Vec<f32>,
 
+    pub uniform_light_samplers: Vec<UniformLightSampler>,
+    pub uniform_light_sampler_data: Vec<LightId>,
+
     pub root: Option<NodeId>,
+    pub root_ls: Option<LightSamplerId>,
 
     pub named_spectra: HashMap<&'static str, SpectrumId>,
 }
@@ -97,6 +102,8 @@ pub enum ImageData {
 impl Scene {
     pub fn new(builtin: &SpectrumData) -> Self {
         let mut this = Scene::default();
+        // empty slot
+        this.infinite_lights.push(LightId::ZERO);
         this.add_table_spectrum(*builtin.cie_x);
         this.add_table_spectrum(*builtin.cie_y);
         this.add_table_spectrum(*builtin.cie_z);
@@ -143,7 +150,10 @@ impl Scene {
         println!("  Inf Uniform       {}", human_size_of(&self.uniform_lights));
         println!("  Inf Image         {}", human_size_of(&self.image_lights));
         println!("  Area              {}", human_size_of(&self.area_lights));
-        println!("  Light Sampler     {}", human_size_of(&self.all_lights));
+        println!("  Inf Light List    {}", human_size_of(&self.infinite_lights));
+        println!("Light Samplers");
+        println!("  Uniform           {}", human_size_of(&self.uniform_light_samplers));
+        println!("  Uniform Data      {}", human_size_of(&self.uniform_light_sampler_data));
         println!("Spectra");
         println!("  Table             {}", human_size_of(&self.table_spectra));
         println!("  Constant          {}", human_size_of(&self.constant_spectra));
@@ -153,16 +163,6 @@ impl Scene {
         println!("  Piecewise Linear  {}", human_size_of(&self.piecewise_linear_spectra));
         println!("  Rgb Conductor     {}", human_size_of(&self.rgb_ior_im_spectra));
         println!("Misc Data           {}", human_size_of(&self.float_data));
-    }
-
-    pub fn workaround_empty_buffer_nonsense(&mut self) {
-        if self.infinite_lights.is_empty() {
-            let zero = self.add_constant_spectrum(0.0);
-            self.add_uniform_light(zero);
-            if self.all_lights.len() > 1 {
-                self.all_lights.pop();
-            }
-        }
     }
 
     pub fn make_bind_group_layout(&self, device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -205,7 +205,6 @@ impl Scene {
                 storage_buffer_entry(129),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
-                storage_buffer_entry(132),
                 storage_buffer_entry(160),
                 storage_buffer_entry(161),
                 storage_buffer_entry(162),
@@ -214,6 +213,9 @@ impl Scene {
                 storage_buffer_entry(165),
                 storage_buffer_entry(166),
                 storage_buffer_entry(192),
+                storage_buffer_entry(224),
+                storage_buffer_entry(225),
+                storage_buffer_entry(226),
             ],
         })
     }
@@ -249,7 +251,6 @@ impl Scene {
         let mix_mat = make_buffer(device, &self.mix_mat);
 
         let infinite_lights = make_buffer(device, &self.infinite_lights);
-        let all_lights = make_buffer(device, &self.all_lights);
 
         let uniform_lights = make_buffer(device, &self.uniform_lights);
         let image_lights = make_buffer(device, &self.image_lights);
@@ -265,7 +266,11 @@ impl Scene {
 
         let float_data = make_buffer(device, &self.float_data);
 
+        let uniform_light_samplers = make_buffer(device, &self.uniform_light_samplers);
+        let uniform_light_sampler_data = make_buffer(device, &self.uniform_light_sampler_data);
+
         let root = make_buffer(device, &[self.root.unwrap()]);
+        let root_ls = make_buffer(device, &[self.root_ls.unwrap()]);
 
         let empty = [ImageData::Srgb(RgbaImage::new(1, 1))];
         let images = match self.images.is_empty() {
@@ -350,10 +355,9 @@ impl Scene {
                 make_entry(101, &metallic_workflow_mat),
                 make_entry(102, &mix_mat),
                 make_entry(128, &infinite_lights),
-                make_entry(129, &all_lights),
-                make_entry(130, &uniform_lights),
-                make_entry(131, &image_lights),
-                make_entry(132, &area_lights),
+                make_entry(129, &uniform_lights),
+                make_entry(130, &image_lights),
+                make_entry(131, &area_lights),
                 make_entry(160, &table_spectra),
                 make_entry(161, &constant_spectra),
                 make_entry(162, &rgb_albedo_spectra),
@@ -362,6 +366,9 @@ impl Scene {
                 make_entry(165, &piecewise_linear_spectra),
                 make_entry(166, &rgb_ior_im_spectra),
                 make_entry(192, &float_data),
+                make_entry(224, &root_ls),
+                make_entry(225, &uniform_light_samplers),
+                make_entry(226, &uniform_light_sampler_data),
             ],
         })
     }

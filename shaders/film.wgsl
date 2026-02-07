@@ -1,4 +1,4 @@
-#import /sampler.wgsl
+#import /sampler/meta.wgsl
 #import /spectrum.wgsl
 
 @group(1) @binding(0)

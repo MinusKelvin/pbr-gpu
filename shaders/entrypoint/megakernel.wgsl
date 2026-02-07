@@ -1,9 +1,9 @@
 #import /scene.wgsl
-#import /sampler.wgsl
+#import /sampler/meta.wgsl
 #import /camera.wgsl
 #import /film.wgsl
 #import /filter.wgsl
-#import /integrator.wgsl
+#import /integrator/meta.wgsl
 
 struct Immediates {
     sample_number: u32

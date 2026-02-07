@@ -1,4 +1,4 @@
-#import /sampler.wgsl
+#import /sampler/meta.wgsl
 
 struct FilterSample {
     p: vec2f,
