@@ -18,8 +18,11 @@ fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavel
     bsdf.id = BSDF_CONDUCTOR;
     bsdf.v0 = texture_evaluate(material.ior_re, uv, wl);
     bsdf.v1 = -texture_evaluate(material.ior_im, uv, wl);
-    bsdf.v2.x = texture_evaluate(material.roughness_u, uv, wl).x;
-    bsdf.v2.y = texture_evaluate(material.roughness_v, uv, wl).x;
+    let alpha = trowbridge_reitz_adjust_alpha(vec2f(
+        texture_evaluate(material.roughness_u, uv, wl).x,
+        texture_evaluate(material.roughness_v, uv, wl).x,
+    ));
+    bsdf.v2 = vec4f(alpha, 0, 0);
     return bsdf;
 }
 

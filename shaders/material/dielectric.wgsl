@@ -16,8 +16,11 @@ fn material_dielectric_evaluate(material: DielectricMaterial, uv: vec2f, wl: Wav
     var bsdf: BsdfParams;
     bsdf.id = BSDF_DIELECTRIC;
     bsdf.v0 = spectrum_sample(material.ior, wl);
-    bsdf.v1.x = texture_evaluate(material.roughness_u, uv, wl).x;
-    bsdf.v1.y = texture_evaluate(material.roughness_v, uv, wl).x;
+    let alpha = trowbridge_reitz_adjust_alpha(vec2f(
+        texture_evaluate(material.roughness_u, uv, wl).x,
+        texture_evaluate(material.roughness_v, uv, wl).x,
+    ));
+    bsdf.v1 = vec4f(alpha, 0, 0);
     return bsdf;
 }
 

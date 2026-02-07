@@ -21,9 +21,12 @@ fn material_metallic_workflow_evaluate(
     var bsdf: BsdfParams;
     bsdf.id = BSDF_METALLIC_WORKFLOW;
     bsdf.v0 = texture_evaluate(material.base_color, uv, wl);
-    bsdf.v1.x = texture_evaluate(material.roughness_u, uv, wl).x;
-    bsdf.v1.y = texture_evaluate(material.roughness_v, uv, wl).x;
-    bsdf.v1.z = texture_evaluate(material.metallic, uv, wl).x;
+    let alpha = trowbridge_reitz_adjust_alpha(vec2f(
+        texture_evaluate(material.roughness_u, uv, wl).x,
+        texture_evaluate(material.roughness_v, uv, wl).x,
+    ));
+    let metallic = texture_evaluate(material.metallic, uv, wl).x;
+    bsdf.v1 = vec4f(alpha, metallic, 0);
     return bsdf;
 }
 

@@ -4,6 +4,14 @@ fn trowbridge_reitz_is_smooth(alpha: vec2f) -> bool {
     return max(alpha.x, alpha.y) < 1.0e-3;
 }
 
+fn trowbridge_reitz_adjust_alpha(alpha_: vec2f) -> vec2f {
+    var alpha = alpha_;
+    if !trowbridge_reitz_is_smooth(alpha) {
+        alpha = max(alpha, vec2f(1.0e-6));
+    }
+    return alpha;
+}
+
 fn trowbridge_reitz_ndf(alpha: vec2f, nm: vec3f) -> f32 {
     if cos2_theta(nm) == 0 {
         return 0;
