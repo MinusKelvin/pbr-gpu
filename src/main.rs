@@ -232,9 +232,10 @@ fn main() -> anyhow::Result<()> {
     for i in options.sample_offset..render_options.samples {
         let mut encoder = device.create_command_encoder(&Default::default());
 
+        let begin = (i == options.sample_offset).then_some(0);
+        let end = (i + 1 == render_options.samples).then_some(1);
+
         {
-            let begin = (i == options.sample_offset).then_some(0);
-            let end = (i + 1 == render_options.samples).then_some(1);
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: None,
                 timestamp_writes: (begin.is_some() || end.is_some()).then_some(
@@ -257,7 +258,9 @@ fn main() -> anyhow::Result<()> {
             );
         }
 
-        encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
+        if end.is_some() {
+            encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
+        }
 
         let new = queue.submit([encoder.finish()]);
         device
