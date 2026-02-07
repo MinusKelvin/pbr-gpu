@@ -372,7 +372,10 @@ impl SceneBuilder {
                 self.textures
                     .get(props.get_string(name).unwrap())
                     .copied()
-                    .unwrap_or(self.error_texture),
+                    .unwrap_or_else(|| {
+                        println!("Texture {name} doesn't exist?");
+                        self.error_texture
+                    }),
             ),
             _ => self
                 .spectrum_property(props, name, 1.0, false)
@@ -429,6 +432,9 @@ impl SceneBuilder {
             }
             "conductor" => {
                 let refl = props.get_vec3_list("reflectance");
+                if let Some(ty) = props.type_of("reflectance") && ty != "rgb" {
+                    println!("Unrecognized conductor reflectance specification type {ty}");
+                }
 
                 let (ior_re, ior_im) = match refl {
                     Some(refl) => (

@@ -68,11 +68,23 @@ impl Scene {
         let total_noninfinite: f32 = powers.iter().sum();
         let mut total = total_noninfinite;
 
+        let inf_light_power = match total_noninfinite == 0.0 {
+            true => 1.0,
+            false => total_noninfinite,
+        };
+
         for (power, &light) in powers.iter_mut().zip(lights) {
             if light.is_infinite() {
-                *power = total_noninfinite;
-                total += total_noninfinite;
+                *power = inf_light_power;
+                total += inf_light_power;
             }
+        }
+
+        if total == 0.0 {
+            let id = LightSamplerId::new(LightSamplerType::Power, self.power_light_samplers.len());
+            self.power_light_samplers
+                .push(PowerLightSampler { ptr: 0, count: 0 });
+            return id;
         }
 
         powers.iter_mut().for_each(|v| *v /= total);
