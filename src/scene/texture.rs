@@ -51,20 +51,36 @@ impl Scene {
         id
     }
 
-    pub fn add_rgb_image_texture(&mut self, image: u32, uv_map: UvMappingParams) -> TextureId {
+    pub fn add_rgb_image_texture(
+        &mut self,
+        image: u32,
+        scale: f32,
+        invert: bool,
+        uv_map: UvMappingParams,
+    ) -> TextureId {
         let id = TextureId::new(TextureType::ImageRgb, self.image_rgb_tex.len());
         self.image_rgb_tex.push(ImageRgbTexture {
             image,
+            scale,
+            invert: invert as u32,
             uv_map,
             _padding: 0,
         });
         id
     }
 
-    pub fn add_float_image_texture(&mut self, image: u32, uv_map: UvMappingParams) -> TextureId {
+    pub fn add_float_image_texture(
+        &mut self,
+        image: u32,
+        scale: f32,
+        invert: bool,
+        uv_map: UvMappingParams,
+    ) -> TextureId {
         let id = TextureId::new(TextureType::ImageFloat, self.image_float_tex.len());
         self.image_float_tex.push(ImageFloatTexture {
             image,
+            scale,
+            invert: invert as u32,
             uv_map,
             _padding: 0,
         });
@@ -124,6 +140,8 @@ pub struct ConstantTexture {
 #[repr(C)]
 pub struct ImageRgbTexture {
     pub image: u32,
+    pub scale: f32,
+    pub invert: u32,
     pub _padding: u32,
     pub uv_map: UvMappingParams,
 }
@@ -132,6 +150,8 @@ pub struct ImageRgbTexture {
 #[repr(C)]
 pub struct ImageFloatTexture {
     pub image: u32,
+    pub scale: f32,
+    pub invert: u32,
     pub _padding: u32,
     pub uv_map: UvMappingParams,
 }

@@ -215,6 +215,9 @@ impl SceneBuilder {
             }
         };
 
+        let scale = props.get_float("scale").unwrap_or(1.0) as f32;
+        let invert = props.get_bool("invert").unwrap_or(false);
+
         let uv_map = self.uv_mapping(&props);
 
         let Some(img) = self.scene.add_image(&self.base.join(filename), is_float) else {
@@ -222,8 +225,8 @@ impl SceneBuilder {
         };
 
         let id = match is_float {
-            true => self.scene.add_float_image_texture(img, uv_map),
-            false => self.scene.add_rgb_image_texture(img, uv_map),
+            true => self.scene.add_float_image_texture(img, scale, invert, uv_map),
+            false => self.scene.add_rgb_image_texture(img, scale, invert, uv_map),
         };
         self.textures.insert(name.to_owned(), id);
     }
@@ -373,7 +376,7 @@ impl SceneBuilder {
                     .get(props.get_string(name).unwrap())
                     .copied()
                     .unwrap_or_else(|| {
-                        println!("Texture {name} doesn't exist?");
+                        println!("Texture {} doesn't exist?", props.get_string(name).unwrap());
                         self.error_texture
                     }),
             ),

@@ -40,11 +40,15 @@ struct ConstantTexture {
 
 struct ImageRgbTexture {
     image_index: u32,
+    scale: f32,
+    invert: u32,
     uvmap: UvMappingParams,
 }
 
 struct ImageFloatTexture {
     image_index: u32,
+    scale: f32,
+    invert: u32,
     uvmap: UvMappingParams,
 }
 
@@ -94,20 +98,26 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                     data_i++;
                 }
                 case TEXTURE_IMAGE_FLOAT {
-                    let tex = IMAGE_FLOAT_TEXTURES[idx].image_index;
-                    let mapped = fract(uv_map(IMAGE_FLOAT_TEXTURES[idx].uvmap, uv));
+                    let tex = IMAGE_FLOAT_TEXTURES[idx];
+                    let mapped = fract(uv_map(tex.uvmap, uv));
                     let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
-                        * vec2f(textureDimensions(IMAGES[tex]));
-                    let value = textureLoad(IMAGES[tex], vec2u(texel), 0).x;
+                        * vec2f(textureDimensions(IMAGES[tex.image_index]));
+                    var value = textureLoad(IMAGES[tex.image_index], vec2u(texel), 0).x * tex.scale;
+                    if tex.invert != 0 {
+                        value = 1 - value;
+                    }
                     data[data_i] = vec4f(value);
                     data_i++;
                 }
                 case TEXTURE_IMAGE_RGB {
-                    let tex = IMAGE_RGB_TEXTURES[idx].image_index;
-                    let mapped = fract(uv_map(IMAGE_RGB_TEXTURES[idx].uvmap, uv));
+                    let tex = IMAGE_RGB_TEXTURES[idx];
+                    let mapped = fract(uv_map(tex.uvmap, uv));
                     let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
-                        * vec2f(textureDimensions(IMAGES[tex]));
-                    let rgb = textureLoad(IMAGES[tex], vec2u(texel), 0).xyz;
+                        * vec2f(textureDimensions(IMAGES[tex.image_index]));
+                    var rgb = textureLoad(IMAGES[tex.image_index], vec2u(texel), 0).xyz * tex.scale;
+                    if tex.invert != 0 {
+                        rgb = max(vec3f(), vec3f(1) - rgb);
+                    }
                     data[data_i] = spectrum_rgb_albedo_sample(RgbAlbedoSpectrum(rgb), wl);
                     data_i++;
                 }
