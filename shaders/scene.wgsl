@@ -139,6 +139,7 @@ fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
                         let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
                         closest.p = transform_point_inv(t, closest.p);
                         closest.n = transform_normal_inv(t, closest.n);
+                        closest.tangent = transform_vector_inv(t, closest.tangent);
                         // todo: transform tangents
                     }
                 }

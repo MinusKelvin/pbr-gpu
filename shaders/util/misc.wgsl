@@ -64,6 +64,14 @@ fn difference_of_products(a1: f32, a2: f32, b1: f32, b2: f32) -> f32 {
     return a1 * a2 - b1 * b2;
 }
 
+fn any_orthonormal_vector(n: vec3f) -> vec3f {
+    // via "Building an orthonormal basis, revisited" (Duff et al. 2017)
+    let sign = copysign(1.0, n.z);
+    let a = -1 / (sign + n.z);
+    let b = n.x * n.y * a;
+    return vec3(1 + sign * n.x * n.x * a, sign * b, -sign * n.x);
+}
+
 fn any_orthonormal_frame(n: vec3f) -> mat3x3f {
     // via "Building an orthonormal basis, revisited" (Duff et al. 2017)
     let sign = copysign(1.0, n.z);

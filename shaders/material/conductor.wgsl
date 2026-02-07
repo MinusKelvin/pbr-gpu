@@ -13,18 +13,17 @@ struct ConductorMaterial {
     roughness_v: TextureId,
 }
 
-fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavelengths) -> Bsdf {
-    var bsdf: Bsdf;
+fn material_conductor_evaluate(material: ConductorMaterial, uv: vec2f, wl: Wavelengths) -> BsdfParams {
+    var bsdf: BsdfParams;
     bsdf.id = BSDF_CONDUCTOR;
     bsdf.v0 = texture_evaluate(material.ior_re, uv, wl);
     bsdf.v1 = -texture_evaluate(material.ior_im, uv, wl);
     bsdf.v2.x = texture_evaluate(material.roughness_u, uv, wl).x;
     bsdf.v2.y = texture_evaluate(material.roughness_v, uv, wl).x;
-    bsdf.v2 = vec4f(vec2f(length(bsdf.v2.xy)), 0, 0);
     return bsdf;
 }
 
-fn bsdf_conductor_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
+fn bsdf_conductor_f(bsdf: BsdfParams, wo: vec3f, wi: vec3f) -> vec4f {
     if wi.z * wo.z < 0 {
         return vec4f();
     }
@@ -57,7 +56,7 @@ fn bsdf_conductor_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
         / (4 * cos_theta_i * cos_theta_o);
 }
 
-fn bsdf_conductor_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
+fn bsdf_conductor_sample(bsdf: BsdfParams, wo: vec3f, random: vec3f) -> BsdfSample {
     let alpha = bsdf.v2.xy;
     if trowbridge_reitz_is_smooth(alpha) {
         let cos_theta = abs_cos_theta(wo);
@@ -98,7 +97,7 @@ fn bsdf_conductor_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
     return BsdfSample(f, wi, pdf, false);
 }
 
-fn bsdf_conductor_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+fn bsdf_conductor_pdf(bsdf: BsdfParams, wo_: vec3f, wi_: vec3f) -> f32 {
     let alpha = bsdf.v2.xy;
     if trowbridge_reitz_is_smooth(alpha) || wo_.z * wi_.z < 0 {
         return 0;

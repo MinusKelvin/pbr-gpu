@@ -88,7 +88,16 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         }
     }
 
-    return RaycastResult(true, p, n_shade, n_geo, hit.t, MaterialId(), LightId(), uv);
+    let duv02 = vec2f(v0.u, v0.v) - vec2f(v2.u, v2.v);
+    let duv12 = vec2f(v1.u, v1.v) - vec2f(v2.u, v2.v);
+    let det = difference_of_products(duv02.x, duv12.y, duv02.y, duv12.x);
+
+    var tangent: vec3f;
+    if abs(det) >= 1.0e-9 {
+        tangent = (duv12.y * (v0.p - v2.p) - duv02.y * (v1.p - v2.p)) / det;
+    }
+
+    return RaycastResult(true, p, n_shade, n_geo, tangent, hit.t, MaterialId(), LightId(), uv);
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {

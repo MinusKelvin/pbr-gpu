@@ -17,8 +17,8 @@ fn material_metallic_workflow_evaluate(
     material: MetallicWorkflowMaterial,
     uv: vec2f,
     wl: Wavelengths
-) -> Bsdf {
-    var bsdf: Bsdf;
+) -> BsdfParams {
+    var bsdf: BsdfParams;
     bsdf.id = BSDF_METALLIC_WORKFLOW;
     bsdf.v0 = texture_evaluate(material.base_color, uv, wl);
     bsdf.v1.x = texture_evaluate(material.roughness_u, uv, wl).x;
@@ -27,7 +27,7 @@ fn material_metallic_workflow_evaluate(
     return bsdf;
 }
 
-fn bsdf_metallic_workflow_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
+fn bsdf_metallic_workflow_f(bsdf: BsdfParams, wo: vec3f, wi: vec3f) -> vec4f {
     if wi.z * wo.z <= 0 {
         return vec4f();
     }
@@ -51,7 +51,7 @@ fn bsdf_metallic_workflow_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
     return specular_part + diffuse_part;
 }
 
-fn bsdf_metallic_workflow_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
+fn bsdf_metallic_workflow_sample(bsdf: BsdfParams, wo: vec3f, random: vec3f) -> BsdfSample {
     let alpha = bsdf.v1.xy;
 
     let pr_diffuse = 0.5 * (1 - bsdf.v1.z);
@@ -93,7 +93,7 @@ fn bsdf_metallic_workflow_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSa
     return BsdfSample(f, wi, pdf, false);
 }
 
-fn bsdf_metallic_workflow_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+fn bsdf_metallic_workflow_pdf(bsdf: BsdfParams, wo_: vec3f, wi_: vec3f) -> f32 {
     if wi_.z * wo_.z <= 0 {
         return 0;
     }

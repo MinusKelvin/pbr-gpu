@@ -401,6 +401,12 @@ impl SceneBuilder {
                 if let Some(data) = props.map.remove("conductor.roughness") {
                     props.map.insert("roughness", data);
                 }
+                if let Some(data) = props.map.remove("conductor.uroughness") {
+                    props.map.insert("uroughness", data);
+                }
+                if let Some(data) = props.map.remove("conductor.vroughness") {
+                    props.map.insert("vroughness", data);
+                }
                 self.make_material("conductor", props)
             }
             "diffuse" => {
@@ -460,7 +466,6 @@ impl SceneBuilder {
                 let v_roughness = self.texture_property(&props, "vroughness");
                 let (u_roughness, v_roughness) = u_roughness
                     .zip(v_roughness)
-                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
                     .unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
@@ -483,7 +488,6 @@ impl SceneBuilder {
                 let v_roughness = self.texture_property(&props, "vroughness");
                 let (u_roughness, v_roughness) = u_roughness
                     .zip(v_roughness)
-                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
                     .unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")
@@ -523,7 +527,6 @@ impl SceneBuilder {
                 let v_roughness = self.texture_property(&props, "vroughness");
                 let (u_roughness, v_roughness) = u_roughness
                     .zip(v_roughness)
-                    .inspect(|_| println!("Note: anisotropic roughness currently not supported"))
                     .unwrap_or_else(|| {
                         let roughness =
                             self.texture_property(&props, "roughness")

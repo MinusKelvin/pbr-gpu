@@ -45,7 +45,7 @@ pub fn load_data() -> Result<SpectrumData, Box<dyn Error>> {
     iors.insert("metal-Al-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
     iors.insert("metal-Al-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
 
-    let data = annotate_path("spectrum/metal-Cu-Rakic-BB.csv".as_ref(), load_csv::<2>)?;
+    let data = annotate_path("spectrum/metal-Cu-Johnson.csv".as_ref(), load_csv::<2>)?;
     iors.insert("metal-Cu-eta", data.iter().map(|&(wl, [eta, _])| [wl, eta]).collect());
     iors.insert("metal-Cu-k", data.iter().map(|&(wl, [_, k])| [wl, k]).collect());
 

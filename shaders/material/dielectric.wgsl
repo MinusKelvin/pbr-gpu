@@ -12,17 +12,16 @@ struct DielectricMaterial {
     roughness_v: TextureId,
 }
 
-fn material_dielectric_evaluate(material: DielectricMaterial, uv: vec2f, wl: Wavelengths) -> Bsdf {
-    var bsdf: Bsdf;
+fn material_dielectric_evaluate(material: DielectricMaterial, uv: vec2f, wl: Wavelengths) -> BsdfParams {
+    var bsdf: BsdfParams;
     bsdf.id = BSDF_DIELECTRIC;
     bsdf.v0 = spectrum_sample(material.ior, wl);
     bsdf.v1.x = texture_evaluate(material.roughness_u, uv, wl).x;
     bsdf.v1.y = texture_evaluate(material.roughness_v, uv, wl).x;
-    bsdf.v1 = vec4f(vec2f(length(bsdf.v1.xy)), 0, 0);
     return bsdf;
 }
 
-fn bsdf_dielectric_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
+fn bsdf_dielectric_f(bsdf: BsdfParams, wo: vec3f, wi: vec3f) -> vec4f {
     let alpha = bsdf.v1.xy;
     if bsdf.v0.x == 1 || trowbridge_reitz_is_smooth(alpha) {
         return vec4f();
@@ -56,7 +55,7 @@ fn bsdf_dielectric_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
     }
 }
 
-fn bsdf_dielectric_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
+fn bsdf_dielectric_sample(bsdf: BsdfParams, wo: vec3f, random: vec3f) -> BsdfSample {
     let alpha = bsdf.v1.xy;
     if bsdf.v0.x == 1 || trowbridge_reitz_is_smooth(alpha) {
         let r = fresnel_real(cos_theta(wo), bsdf.v0.x);
@@ -110,7 +109,7 @@ fn bsdf_dielectric_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
     }
 }
 
-fn bsdf_dielectric_pdf(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> f32 {
+fn bsdf_dielectric_pdf(bsdf: BsdfParams, wo: vec3f, wi: vec3f) -> f32 {
     let alpha = bsdf.v1.xy;
     if bsdf.v0.x == 1 || trowbridge_reitz_is_smooth(alpha) {
         return 0;

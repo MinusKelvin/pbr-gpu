@@ -67,11 +67,13 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
         return RaycastResult();
     }
     let n = select(hit.p, -hit.p, sphere.flip_normal != 0u);
+    let tangent = vec3f(-hit.p.y, hit.p.x, 0);
     return RaycastResult(
         true,
         hit.p,
         n,
         n,
+        tangent,
         hit.t,
         MaterialId(),
         LightId(),

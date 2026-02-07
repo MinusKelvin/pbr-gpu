@@ -64,23 +64,17 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             break;
         }
 
-        let bsdf = material_evaluate(result.material, result.uv, wl);
+        let bsdf = material_evaluate(result.material, result, wl);
 
         if !secondary_terminated && bsdf_terminates_secondary_wavelengths(bsdf) {
             secondary_terminated = true;
             throughput *= vec4f(4, 0, 0, 0);
         }
 
-        // construct shading coordinate system
-        let to_bsdf_frame = transpose(any_orthonormal_frame(result.n));
-        let old_dir = to_bsdf_frame * -ray.d;
-
         if LS_MODE != LS_BSDF {
             // sample direct lighting
             radiance += throughput * _sample_direct_light(
                 bsdf,
-                to_bsdf_frame,
-                old_dir,
                 result,
                 ray,
                 wl,
@@ -92,14 +86,14 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         // sample bsdf
-        let bsdf_s = bsdf_sample(bsdf, old_dir, vec3f(sample_2d(), sample_1d()));
+        let bsdf_s = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
         if bsdf_s.pdf == 0 {
             break;
         }
 
         bsdf_pdf = bsdf_s.pdf;
 
-        throughput *= bsdf_s.f * abs(bsdf_s.dir.z) / bsdf_s.pdf;
+        throughput *= bsdf_s.f * abs(dot(bsdf_normal(bsdf), bsdf_s.dir)) / bsdf_s.pdf;
 
         // russian roulette
         let rr = max(max(throughput.x, throughput.y), max(throughput.z, throughput.w));
@@ -112,7 +106,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         // spawn new ray
         let offset = 10 * EPSILON * (1 + length(result.p));
-        ray.d = transpose(to_bsdf_frame) * bsdf_s.dir;
+        ray.d = bsdf_s.dir;
         ray.o = result.p + ray.d * offset;
         specular_bounce = bsdf_s.specular;
     }
@@ -122,8 +116,6 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
 fn _sample_direct_light(
     bsdf: Bsdf,
-    to_bsdf_frame: mat3x3f,
-    old_dir: vec3f,
     hit: RaycastResult,
     ray_: Ray,
     wl: Wavelengths,
@@ -140,12 +132,11 @@ fn _sample_direct_light(
 
     let pdf = light_sample.pdf_wrt_solid_angle * light_id_sample.pmf;
 
-    let new_dir = to_bsdf_frame * light_sample.dir;
-    let bsdf_pdf = bsdf_pdf(bsdf, old_dir, new_dir)
+    let bsdf_pdf = bsdf_pdf(bsdf, -ray_.d, light_sample.dir)
         * f32(LS_MODE == LS_MIS);
     let contribution = light_sample.emission
-        * bsdf_f(bsdf, old_dir, new_dir)
-        * abs(new_dir.z)
+        * bsdf_f(bsdf, -ray_.d, light_sample.dir)
+        * abs(dot(bsdf_normal(bsdf), light_sample.dir))
         / pdf
         * mis_weight(pdf, bsdf_pdf);
 

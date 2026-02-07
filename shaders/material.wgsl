@@ -39,7 +39,7 @@ const MATERIAL_THIN_DIELECTRIC: u32 = 4 << MATERIAL_TAG_SHIFT;
 const MATERIAL_METALLIC_WORKFLOW: u32 = 5 << MATERIAL_TAG_SHIFT;
 const MATERIAL_MIX: u32 = 6 << MATERIAL_TAG_SHIFT;
 
-struct Bsdf {
+struct BsdfParams {
     id: u32,
     v0: vec4f,
     v1: vec4f,
@@ -60,19 +60,24 @@ struct BsdfSample {
     specular: bool,
 }
 
+struct Bsdf {
+    from_local: mat3x3f,
+    params: BsdfParams,
+}
+
 struct MixMaterial {
     m1: MaterialId,
     m2: MaterialId,
     amount: TextureId,
 }
 
-fn material_evaluate(material_: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf {
+fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths) -> Bsdf {
     var material = material_;
     while (material.id & MATERIAL_TAG_MASK) == MATERIAL_MIX {
         let mix = MIX_MATERIALS[material.id & MATERIAL_IDX_MASK];
-        let amount = texture_evaluate(mix.amount, uv, wl).x;
-        let h = hash_4d(vec4u(bitcast<vec2u>(uv), mix.m1.id, mix.m2.id)).w;
-        let u = f32(h) / 4294967296;
+        let amount = texture_evaluate(mix.amount, hit.uv, wl).x;
+        let h = hash_4d(vec4u(bitcast<vec2u>(hit.uv), mix.m1.id, mix.m2.id)).w;
+        let u = bits_to_f32(h);
         if u < amount {
             material = mix.m2;
         } else {
@@ -80,56 +85,73 @@ fn material_evaluate(material_: MaterialId, uv: vec2f, wl: Wavelengths) -> Bsdf 
         }
     }
 
+    var tangent = hit.tangent - dot(hit.tangent, hit.n) * hit.n;
+    if dot(tangent, tangent) <= 1.0e-9 {
+        tangent = any_orthonormal_vector(hit.n);
+    } else {
+        tangent = normalize(tangent);
+    }
+
+    var bsdf: Bsdf;
+    bsdf.from_local = mat3x3f(
+        tangent,
+        cross(hit.n, tangent),
+        hit.n
+    );
+
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
         case MATERIAL_DIFFUSE {
-            return material_diffuse_evaluate(DIFFUSE_MATERIALS[idx], uv, wl);
+            bsdf.params = material_diffuse_evaluate(DIFFUSE_MATERIALS[idx], hit.uv, wl);
         }
         case MATERIAL_DIFFUSE_TRANSMIT {
-            return material_diffuse_transmit_evaluate(DIFFUSE_TRANSMIT_MATERIALS[idx], uv, wl);
+            bsdf.params = material_diffuse_transmit_evaluate(DIFFUSE_TRANSMIT_MATERIALS[idx], hit.uv, wl);
         }
         case MATERIAL_CONDUCTOR {
-            return material_conductor_evaluate(CONDUCTOR_MATERIALS[idx], uv, wl);
+            bsdf.params = material_conductor_evaluate(CONDUCTOR_MATERIALS[idx], hit.uv, wl);
         }
         case MATERIAL_DIELECTRIC {
-            return material_dielectric_evaluate(DIELECTRIC_MATERIALS[idx], uv, wl);
+            bsdf.params = material_dielectric_evaluate(DIELECTRIC_MATERIALS[idx], hit.uv, wl);
         }
         case MATERIAL_THIN_DIELECTRIC {
-            return material_thin_dielectric_evaluate(THIN_DIELECTRIC_MATERIALS[idx], uv, wl);
+            bsdf.params = material_thin_dielectric_evaluate(THIN_DIELECTRIC_MATERIALS[idx], hit.uv, wl);
         }
         case MATERIAL_METALLIC_WORKFLOW {
-            return material_metallic_workflow_evaluate(METALLIC_WORKFLOW_MATERIALS[idx], uv, wl);
+            bsdf.params = material_metallic_workflow_evaluate(METALLIC_WORKFLOW_MATERIALS[idx], hit.uv, wl);
         }
-        default {
-            return Bsdf();
-        }
+        default {}
     }
+
+    return bsdf;
 }
 
 fn bsdf_terminates_secondary_wavelengths(bsdf: Bsdf) -> bool {
-    return bsdf.id == BSDF_DIELECTRIC && any(bsdf.v0 != vec4f(bsdf.v0.x))
-        || bsdf.id == BSDF_THIN_DIELECTRIC && any(bsdf.v0 != vec4f(bsdf.v0.x));
+    return bsdf.params.id == BSDF_DIELECTRIC && any(bsdf.params.v0 != vec4f(bsdf.params.v0.x))
+        || bsdf.params.id == BSDF_THIN_DIELECTRIC && any(bsdf.params.v0 != vec4f(bsdf.params.v0.x));
 }
 
-fn bsdf_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
-    switch bsdf.id {
+fn bsdf_f(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> vec4f {
+    let wo = transpose(bsdf.from_local) * wo_;
+    let wi = transpose(bsdf.from_local) * wi_;
+
+    switch bsdf.params.id {
         case BSDF_DIFFUSE {
-            return bsdf_diffuse_f(bsdf, wo, wi);
+            return bsdf_diffuse_f(bsdf.params, wo, wi);
         }
         case BSDF_DIFFUSE_TRANSMIT {
-            return bsdf_diffuse_transmit_f(bsdf, wo, wi);
+            return bsdf_diffuse_transmit_f(bsdf.params, wo, wi);
         }
         case BSDF_CONDUCTOR {
-            return bsdf_conductor_f(bsdf, wo, wi);
+            return bsdf_conductor_f(bsdf.params, wo, wi);
         }
         case BSDF_DIELECTRIC {
-            return bsdf_dielectric_f(bsdf, wo, wi);
+            return bsdf_dielectric_f(bsdf.params, wo, wi);
         }
         case BSDF_THIN_DIELECTRIC {
-            return bsdf_thin_dielectric_f(bsdf, wo, wi);
+            return bsdf_thin_dielectric_f(bsdf.params, wo, wi);
         }
         case BSDF_METALLIC_WORKFLOW {
-            return bsdf_metallic_workflow_f(bsdf, wo, wi);
+            return bsdf_metallic_workflow_f(bsdf.params, wo, wi);
         }
         default {
             return vec4f();
@@ -137,22 +159,25 @@ fn bsdf_f(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> vec4f {
     }
 }
 
-fn bsdf_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
-    switch bsdf.id {
+fn bsdf_sample(bsdf: Bsdf, wo_: vec3f, random: vec3f) -> BsdfSample {
+    let wo = transpose(bsdf.from_local) * wo_;
+
+    var sample: BsdfSample;
+    switch bsdf.params.id {
         case BSDF_DIFFUSE {
-            return bsdf_diffuse_sample(bsdf, wo, random);
+            sample = bsdf_diffuse_sample(bsdf.params, wo, random);
         }
         case BSDF_CONDUCTOR {
-            return bsdf_conductor_sample(bsdf, wo, random);
+            sample = bsdf_conductor_sample(bsdf.params, wo, random);
         }
         case BSDF_DIELECTRIC {
-            return bsdf_dielectric_sample(bsdf, wo, random);
+            sample = bsdf_dielectric_sample(bsdf.params, wo, random);
         }
         case BSDF_THIN_DIELECTRIC {
-            return bsdf_thin_dielectric_sample(bsdf, wo, random);
+            sample = bsdf_thin_dielectric_sample(bsdf.params, wo, random);
         }
         case BSDF_METALLIC_WORKFLOW {
-            return bsdf_metallic_workflow_sample(bsdf, wo, random);
+            sample = bsdf_metallic_workflow_sample(bsdf.params, wo, random);
         }
         default {
             // this is also the BSDF_DIFFUSE_TRANSMIT case
@@ -161,7 +186,7 @@ fn bsdf_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
             if random.z < 0.5 {
                 dir.z = -dir.z;
             }
-            return BsdfSample(
+            sample = BsdfSample(
                 bsdf_f(bsdf, dir, wo),
                 dir,
                 pdf / 2.0,
@@ -169,24 +194,30 @@ fn bsdf_sample(bsdf: Bsdf, wo: vec3f, random: vec3f) -> BsdfSample {
             );
         }
     }
+
+    sample.dir = bsdf.from_local * sample.dir;
+    return sample;
 }
 
-fn bsdf_pdf(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> f32 {
-    switch bsdf.id {
+fn bsdf_pdf(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> f32 {
+    let wo = transpose(bsdf.from_local) * wo_;
+    let wi = transpose(bsdf.from_local) * wi_;
+
+    switch bsdf.params.id {
         case BSDF_DIFFUSE {
-            return bsdf_diffuse_pdf(bsdf, wo, wi);
+            return bsdf_diffuse_pdf(bsdf.params, wo, wi);
         }
         case BSDF_CONDUCTOR {
-            return bsdf_conductor_pdf(bsdf, wo, wi);
+            return bsdf_conductor_pdf(bsdf.params, wo, wi);
         }
         case BSDF_DIELECTRIC {
-            return bsdf_dielectric_pdf(bsdf, wo, wi);
+            return bsdf_dielectric_pdf(bsdf.params, wo, wi);
         }
         case BSDF_THIN_DIELECTRIC {
-            return bsdf_thin_dielectric_pdf(bsdf, wo, wi);
+            return bsdf_thin_dielectric_pdf(bsdf.params, wo, wi);
         }
         case BSDF_METALLIC_WORKFLOW {
-            return bsdf_metallic_workflow_pdf(bsdf, wo, wi);
+            return bsdf_metallic_workflow_pdf(bsdf.params, wo, wi);
         }
         default {
             // this is also the BSDF_DIFFUSE_TRANSMIT case
@@ -194,4 +225,8 @@ fn bsdf_pdf(bsdf: Bsdf, wo: vec3f, wi: vec3f) -> f32 {
             return pdf / 2;
         }
     }
+}
+
+fn bsdf_normal(bsdf: Bsdf) -> vec3f {
+    return bsdf.from_local[2];
 }
