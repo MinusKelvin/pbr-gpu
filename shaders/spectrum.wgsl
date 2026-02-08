@@ -31,6 +31,8 @@ const SPECTRUM_RGB_ILLUMINANT: u32 = 3 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_BLACKBODY: u32 = 4 << SPECTRUM_TAG_SHIFT;
 const SPECTRUM_PIECEWISE_LINEAR: u32 = 5 << SPECTRUM_TAG_SHIFT;
 
+@group(1) @binding(24)
+var LINEAR_FILTER_CLAMP: sampler;
 @group(1) @binding(32)
 var RGB_TO_COEFF: texture_3d<f32>;
 
@@ -108,9 +110,7 @@ fn spectrum_table_sample(idx: u32, wl: Wavelengths) -> vec4f {
 }
 
 fn spectrum_rgb_albedo_sample(spectrum: RgbAlbedoSpectrum, wl: Wavelengths) -> vec4f {
-    let dim = textureDimensions(RGB_TO_COEFF);
-    let texel = vec3u(spectrum.rgb * vec3f(dim));
-    let coeffs = textureLoad(RGB_TO_COEFF, min(texel, dim - 1), 0);
+    let coeffs = textureSampleLevel(RGB_TO_COEFF, LINEAR_FILTER_CLAMP, spectrum.rgb, 0);
 
     let l = (wl.l - WAVELENGTH_MIN) / (WAVELENGTH_MAX - WAVELENGTH_MIN);
     let poly = coeffs.x * l * l + coeffs.y * l + coeffs.z;

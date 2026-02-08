@@ -34,6 +34,9 @@ var<storage> CHECKERBOARD_TEXTURES: array<CheckerboardTexture>;
 @group(0) @binding(72)
 var<storage> CONDUCTOR_REFL_TEXTURES: array<ConductorReflTexture>;
 
+@group(1) @binding(25)
+var LINEAR_FILTER_WRAP: sampler;
+
 struct ConstantTexture {
     spectrum: SpectrumId
 }
@@ -99,10 +102,10 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                 }
                 case TEXTURE_IMAGE_FLOAT {
                     let tex = IMAGE_FLOAT_TEXTURES[idx];
-                    let mapped = fract(uv_map(tex.uvmap, uv));
-                    let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
-                        * vec2f(textureDimensions(IMAGES[tex.image_index]));
-                    var value = textureLoad(IMAGES[tex.image_index], vec2u(texel), 0).x * tex.scale;
+                    let mapped = uv_map(tex.uvmap, uv);
+                    var value = textureSampleLevel(
+                        IMAGES[tex.image_index], LINEAR_FILTER_WRAP, vec2(mapped.x, 1 - mapped.y), 0
+                    ).x * tex.scale;
                     if tex.invert != 0 {
                         value = 1 - value;
                     }
@@ -111,10 +114,10 @@ fn texture_evaluate(texture_id: TextureId, uv: vec2f, wl: Wavelengths) -> vec4f 
                 }
                 case TEXTURE_IMAGE_RGB {
                     let tex = IMAGE_RGB_TEXTURES[idx];
-                    let mapped = fract(uv_map(tex.uvmap, uv));
-                    let texel = vec2f(mapped.x, (1 - EPSILON/2) - mapped.y)
-                        * vec2f(textureDimensions(IMAGES[tex.image_index]));
-                    var rgb = textureLoad(IMAGES[tex.image_index], vec2u(texel), 0).xyz * tex.scale;
+                    let mapped = uv_map(tex.uvmap, uv);
+                    var rgb = textureSampleLevel(
+                        IMAGES[tex.image_index], LINEAR_FILTER_WRAP, vec2(mapped.x, 1 - mapped.y), 0
+                    ).xyz * tex.scale;
                     if tex.invert != 0 {
                         rgb = max(vec3f(), vec3f(1) - rgb);
                     }
