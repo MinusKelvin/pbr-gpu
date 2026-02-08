@@ -5,11 +5,9 @@ use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
 use clap::Parser;
-use glam::{DVec4, Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
+use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
-
-use crate::scene::Scene;
 
 mod loader;
 mod options;

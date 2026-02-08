@@ -8,13 +8,14 @@ var variance_texture: texture_storage_2d<rgba32float, read_write>;
 
 fn film_wavelengths_sample() -> Wavelengths {
     let first = sample_1d();
-    let stratified = vec4f(first, first + 0.25, first + 0.5, first + 0.75) % 1;
-    let lambda = stratified * (WAVELENGTH_MAX - WAVELENGTH_MIN) + WAVELENGTH_MIN;
+    let stratified = fract(vec4f(first, first + 0.25, first + 0.5, first + 0.75));
+    let lambda = 538 + atanh(1.8279163271 * stratified - 0.8569106254) / 0.0072;
     return Wavelengths(lambda);
 }
 
 fn film_wavelengths_pdf(wl: Wavelengths) -> vec4f {
-    return vec4(1 / (WAVELENGTH_MAX - WAVELENGTH_MIN));
+    let d = cosh(0.0072 * (wl.l - 538));
+    return 0.00393891114869 / (d * d);
 }
 
 fn film_size() -> vec2u {
