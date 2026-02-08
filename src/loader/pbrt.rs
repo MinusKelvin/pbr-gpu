@@ -154,7 +154,7 @@ impl SceneBuilder {
     }
 
     fn rotate(&mut self, (angle, axis): (f64, DVec3)) {
-        self.state.transform *= DMat4::from_axis_angle(axis, angle.to_radians());
+        self.state.transform *= DMat4::from_axis_angle(axis.normalize(), angle.to_radians());
     }
 
     fn translate(&mut self, offset: DVec3) {
