@@ -323,16 +323,21 @@ impl SceneBuilder {
     ) -> Option<SpectrumId> {
         match props.type_of(name)? {
             "rgb" if illum => Some(self.scene.add_rgb_illuminant_spectrum(
-                props.get_vec3_list(name).unwrap()[0].as_vec3(),
+                props.get_vec3_list(name).unwrap()[0].as_vec3() * scale,
                 SpectrumId::D65,
             )),
-            "rgb" => Some(
-                self.scene
-                    .add_rgb_albedo_spectrum(props.get_vec3_list(name).unwrap()[0].as_vec3()),
-            ),
+            "rgb" => {
+                if scale != 1.0 {
+                    println!("Cannot scale rgb albedo spectrum");
+                }
+                Some(
+                    self.scene
+                        .add_rgb_albedo_spectrum(props.get_vec3_list(name).unwrap()[0].as_vec3()),
+                )
+            }
             "float" => Some(
                 self.scene
-                    .add_constant_spectrum(props.get_float(name).unwrap() as f32),
+                    .add_constant_spectrum(props.get_float(name).unwrap() as f32 * scale),
             ),
             "blackbody" => Some(self.scene.add_blackbody_spectrum(
                 props.get_float(name).unwrap() as f32,
@@ -340,6 +345,9 @@ impl SceneBuilder {
                 true,
             )),
             "spectrum" => {
+                if scale != 1.0 {
+                    println!("Cannot scale named spectrum");
+                }
                 if let Some(&spectrum) = props
                     .get_string(name)
                     .and_then(|name| self.scene.named_spectra.get(name))
