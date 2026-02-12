@@ -179,6 +179,12 @@ fn bsdf_terminates_secondary_wavelengths(bsdf: Bsdf) -> bool {
         || bsdf.params.id == BSDF_THIN_DIELECTRIC && any(bsdf.params.v0 != vec4f(bsdf.params.v0.x));
 }
 
+fn bsdf_is_highly_specular(bsdf: Bsdf) -> bool {
+    return bsdf.params.id == BSDF_DIELECTRIC && trowbridge_reitz_is_smooth(bsdf.params.v1.xy)
+        || bsdf.params.id == BSDF_CONDUCTOR && trowbridge_reitz_is_smooth(bsdf.params.v2.xy)
+        || bsdf.params.id == BSDF_THIN_DIELECTRIC;
+}
+
 fn bsdf_f(bsdf: Bsdf, wo_: vec3f, wi_: vec3f) -> vec4f {
     let wo = transpose(bsdf.from_local) * wo_;
     let wi = transpose(bsdf.from_local) * wi_;

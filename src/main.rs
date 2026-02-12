@@ -1,13 +1,17 @@
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use bytemuck::{Pod, Zeroable};
+use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use clap::Parser;
-use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
+use image::{Rgb, RgbImage};
+use ordered_float::OrderedFloat;
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
+
+use crate::scene::Scene;
 
 mod loader;
 mod options;
@@ -65,6 +69,8 @@ fn main() -> anyhow::Result<()> {
             | wgpu::Features::TEXTURE_BINDING_ARRAY
             | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
             | wgpu::Features::FLOAT32_FILTERABLE
+            | wgpu::Features::SHADER_FLOAT32_ATOMIC
+            | wgpu::Features::CLEAR_TEXTURE
             | wgpu::Features::IMMEDIATES,
         required_limits: wgpu::Limits {
             max_immediate_size: 64,
@@ -76,6 +82,12 @@ fn main() -> anyhow::Result<()> {
         },
         ..Default::default()
     }))?;
+
+    let mut extra_state = match options.integrator.as_str() {
+        "guided" => Box::new(GuidedState::new(&device, &scene, render_options.samples))
+            as Box<dyn ExtraState>,
+        _ => Box::new(()),
+    };
 
     let flags = [
         ("sampler".to_owned(), "independent".to_owned()),
@@ -248,11 +260,16 @@ fn main() -> anyhow::Result<()> {
         ],
     });
 
+    let mut bg_layouts = vec![&scene_bg_layout, &statics_bg_layout];
+    extra_state.add_bind_group_layouts(&mut bg_layouts);
+
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&scene_bg_layout, &statics_bg_layout],
+        bind_group_layouts: &bg_layouts,
         immediate_size: 4,
     });
+
+    drop(bg_layouts);
 
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
@@ -300,6 +317,9 @@ fn main() -> anyhow::Result<()> {
             pass.set_bind_group(0, &scene_bg, &[]);
             pass.set_bind_group(1, &statics_bg, &[]);
             pass.set_immediates(0, bytemuck::bytes_of(&i));
+
+            extra_state.setup_pass(&mut pass);
+
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
                 (render_options.height + 3) / 4,
@@ -318,6 +338,9 @@ fn main() -> anyhow::Result<()> {
                 timeout: None,
             })
             .unwrap();
+
+        extra_state.after_sample(i, &device, &queue, &mean, &variance);
+
         last = new;
         eprint!("\r{i}         ");
         std::io::stderr().flush().unwrap();
@@ -380,7 +403,7 @@ fn main() -> anyhow::Result<()> {
     let avg_rel_var = avg_rel_var / mean.len() as f32;
     let avg_rel_err = avg_rel_err / mean.len() as f32;
 
-    let avg_sample_time = time as f32 / mean[0].w;
+    let avg_sample_time = time as f32 / (render_options.samples - options.sample_offset) as f32;
 
     println!(
         "Took {time:.2} seconds ({:.3?} / sample)",
@@ -509,6 +532,19 @@ fn storage_buffer_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
+fn writable_storage_buffer_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only: false },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 #[repr(C)]
 struct ProjectiveCamera {
@@ -540,5 +576,389 @@ impl Transform {
             m: inverse.inverse(),
             m_inv: inverse,
         }
+    }
+}
+
+trait ExtraState {
+    fn add_bind_group_layouts<'a>(&'a mut self, bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>);
+    fn setup_pass(&mut self, pass: &mut wgpu::ComputePass);
+    fn after_sample(
+        &mut self,
+        sample: u32,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mean: &wgpu::Texture,
+        variance: &wgpu::Texture,
+    );
+}
+
+impl ExtraState for () {
+    fn add_bind_group_layouts<'a>(&'a mut self, _bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>) {}
+    fn setup_pass(&mut self, _pass: &mut wgpu::ComputePass) {}
+    fn after_sample(
+        &mut self,
+        _sample: u32,
+        _device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        _mean: &wgpu::Texture,
+        _variance: &wgpu::Texture,
+    ) {
+    }
+}
+
+struct GuidedState {
+    bsp: wgpu::Buffer,
+    dir_tree: wgpu::Buffer,
+    bounds: wgpu::Buffer,
+    bg_layout: wgpu::BindGroupLayout,
+    bg: wgpu::BindGroup,
+    iter: u32,
+    next_iter: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit, AnyBitPattern)]
+#[repr(C)]
+struct BspNode {
+    is_leaf: u32,
+    left: u32,
+    right: u32,
+    count: u32,
+}
+
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[repr(C)]
+struct DirTreeNode {
+    flux: f32,
+    child: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+struct SceneBounds {
+    min: Vec3,
+    _padding0: u32,
+    max: Vec3,
+    _padding1: u32,
+}
+
+impl ExtraState for GuidedState {
+    fn add_bind_group_layouts<'a>(&'a mut self, bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>) {
+        bg_layouts.push(&self.bg_layout);
+    }
+
+    fn setup_pass(&mut self, pass: &mut wgpu::ComputePass) {
+        pass.set_bind_group(2, &self.bg, &[]);
+    }
+
+    fn after_sample(
+        &mut self,
+        sample: u32,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        mean: &wgpu::Texture,
+        variance: &wgpu::Texture,
+    ) {
+        let samples = sample + 1;
+        if samples == self.next_iter {
+            self.iter += 1;
+            self.next_iter += Self::INITIAL_SAMPLES << self.iter;
+            println!("Updating guidance model at sample {samples}");
+
+            let bsp = Arc::new(OnceLock::new());
+            let bsp2 = bsp.clone();
+            wgpu::util::DownloadBuffer::read_buffer(
+                device,
+                queue,
+                &self.bsp.slice(..),
+                move |result| {
+                    bsp2.set(bytemuck::pod_collect_to_vec(&result.unwrap()))
+                        .unwrap();
+                },
+            );
+
+            let dir_tree = Arc::new(OnceLock::new());
+            let dir_tree2 = dir_tree.clone();
+            wgpu::util::DownloadBuffer::read_buffer(
+                device,
+                queue,
+                &self.dir_tree.slice(..),
+                move |result| {
+                    dir_tree2
+                        .set(bytemuck::pod_collect_to_vec(&result.unwrap()))
+                        .unwrap();
+                },
+            );
+
+            device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+
+            let mut bsp = Arc::into_inner(bsp).unwrap().into_inner().unwrap();
+            let dir_tree = Arc::into_inner(dir_tree).unwrap().into_inner().unwrap();
+
+            let mut new_dir_tree = vec![];
+
+            let split_threshold = Self::C * (1u32 << self.iter).isqrt();
+
+            Self::refine_bsp(&mut bsp, &dir_tree, &mut new_dir_tree, split_threshold, 0);
+
+            self.bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&bsp),
+                usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+            });
+
+            let train = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&new_dir_tree),
+                usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+            });
+            let guide = std::mem::replace(&mut self.dir_tree, train);
+
+            self.bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &self.bg_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.bsp.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: guide.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.dir_tree.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: self.bounds.as_entire_binding(),
+                    },
+                ],
+            });
+
+            let mut cmd = device.create_command_encoder(&Default::default());
+            cmd.clear_texture(mean, &wgpu::ImageSubresourceRange::default());
+            cmd.clear_texture(variance, &wgpu::ImageSubresourceRange::default());
+            queue.submit([cmd.finish()]);
+        }
+    }
+}
+
+impl GuidedState {
+    const LEAF_ENERGY_PORTION: f32 = 0.01;
+    const C: u32 = 12000;
+    const INITIAL_SAMPLES: u32 = 4;
+
+    fn new(device: &wgpu::Device, scene: &Scene, samples: u32) -> Self {
+        let mut qt_nodes = vec![];
+        let initial_dir_tree = Self::refine_quadtree(&mut qt_nodes, &[], !0, 1.0, 0);
+
+        let bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::bytes_of(&BspNode {
+                is_leaf: 1,
+                left: !0,
+                right: initial_dir_tree,
+                count: 0,
+            }),
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+        });
+
+        let initial_guide = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: &[0; std::mem::size_of::<[DirTreeNode; 4]>()],
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let initial_train = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(qt_nodes.as_flattened()),
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+        });
+
+        let bounds = scene.node_bounds(scene.root.unwrap());
+        let bounds = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::bytes_of(&SceneBounds {
+                min: bounds.min,
+                max: bounds.max,
+                _padding0: 0,
+                _padding1: 0,
+            }),
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
+        let bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                writable_storage_buffer_entry(0),
+                storage_buffer_entry(1),
+                writable_storage_buffer_entry(2),
+                storage_buffer_entry(3),
+            ],
+        });
+
+        let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &bg_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: bsp.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: initial_guide.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: initial_train.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: bounds.as_entire_binding(),
+                },
+            ],
+        });
+
+        GuidedState {
+            bsp,
+            dir_tree: initial_train,
+            bounds,
+            bg_layout,
+            bg,
+            iter: 0,
+            next_iter: Self::INITIAL_SAMPLES,
+        }
+    }
+
+    fn refine_quadtree(
+        new_nodes: &mut Vec<[DirTreeNode; 4]>,
+        existing_nodes: &[[DirTreeNode; 4]],
+        node: u32,
+        flux_ratio: f32,
+        depth: u32,
+    ) -> u32 {
+        assert!(flux_ratio <= 1.0 && flux_ratio >= 0.0, "{flux_ratio}");
+        if flux_ratio < Self::LEAF_ENERGY_PORTION || depth >= 20 {
+            return !0;
+        }
+
+        let children = match node == !0 {
+            true => [(!0, 0.25); 4],
+            false => {
+                let total_flux: f32 = existing_nodes[node as usize].iter().map(|n| n.flux).sum();
+                if total_flux == 0.0 {
+                    [(!0, 0.25); 4]
+                } else {
+                    existing_nodes[node as usize].map(|node| (node.child, node.flux / total_flux))
+                }
+            }
+        };
+
+        let new_children = children.map(|(child, portion)| {
+            assert!(portion.is_finite(), "{:?}", existing_nodes[node as usize]);
+            DirTreeNode {
+                flux: 0.0,
+                child: Self::refine_quadtree(
+                    new_nodes,
+                    existing_nodes,
+                    child,
+                    flux_ratio * portion,
+                    depth + 1,
+                ),
+            }
+        });
+
+        let id = new_nodes.len() as u32;
+        new_nodes.push(new_children);
+        id
+    }
+
+    fn refine_bsp(
+        bsp: &mut Vec<BspNode>,
+        dir_tree: &[[DirTreeNode; 4]],
+        new_dir_tree: &mut Vec<[DirTreeNode; 4]>,
+        split_threshold: u32,
+        node: u32,
+    ) {
+        let bsp_len = bsp.len() as u32;
+        let n = &mut bsp[node as usize];
+        if n.is_leaf == 0 {
+            let left = n.left;
+            let right = n.right;
+            Self::refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, left);
+            Self::refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, right);
+            return;
+        }
+
+        if n.count > split_threshold {
+            let guide_dt = n.left;
+            let train_dt = n.right;
+            let count = n.count / 2;
+            n.left = bsp_len;
+            n.right = bsp_len + 1;
+            n.is_leaf = 0;
+
+            bsp.push(BspNode {
+                is_leaf: 1,
+                left: guide_dt,
+                right: train_dt,
+                count,
+            });
+            bsp.push(BspNode {
+                is_leaf: 1,
+                left: guide_dt,
+                right: train_dt,
+                count,
+            });
+
+            Self::refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, bsp_len);
+            Self::refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, bsp_len + 1);
+            return;
+        }
+
+        n.left = n.right;
+        n.right = Self::refine_quadtree(new_dir_tree, dir_tree, n.right, 1.0, 0);
+        n.count = 0;
+    }
+
+    fn output_dirtree(dir_tree: &[[DirTreeNode; 4]], node: u32) {
+        fn height(dt: &[[DirTreeNode; 4]], node: u32) -> u32 {
+            match node == !0 {
+                true => 0,
+                false => {
+                    1 + dt[node as usize]
+                        .iter()
+                        .map(|n| height(dt, n.child))
+                        .max()
+                        .unwrap()
+                }
+            }
+        }
+        let resolution = 1 << height(dir_tree, node);
+
+        fn flux_density(dt: &[[DirTreeNode; 4]], node: u32, pos: glam::Vec2, depth: u32) -> f32 {
+            let child = pos.cmpge(Vec2::splat(0.5)).bitmask() as usize;
+            let child = &dt[node as usize][child];
+            if child.child == !0 {
+                return child.flux * (1 << 2 * depth) as f32;
+            }
+            flux_density(dt, child.child, (pos * 2.0).fract(), depth + 1)
+        }
+
+        let img = image::ImageBuffer::from_fn(resolution, resolution, |x, y| {
+            image::Luma([flux_density(
+                dir_tree,
+                node,
+                Vec2::new(x as f32 + 0.5, y as f32 + 0.5) / resolution as f32,
+                0,
+            )])
+        });
+        let max = *img.iter().max_by_key(|&&x| OrderedFloat(x)).unwrap();
+        let img = RgbImage::from_fn(resolution, resolution, |x, y| {
+            Rgb([(img.get_pixel(x, y).0[0] / max * 255.0) as u8; 3])
+        });
+        img.save("dirtree.png").unwrap();
     }
 }

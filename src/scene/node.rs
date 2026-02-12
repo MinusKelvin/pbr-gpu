@@ -137,7 +137,7 @@ impl Scene {
         NodeId::new(NodeType::Bvh, idx)
     }
 
-    fn node_bounds(&self, node: NodeId) -> Bounds {
+    pub fn node_bounds(&self, node: NodeId) -> Bounds {
         match node.ty() {
             NodeType::Primitive => self.shape_bounds(self.primitive_nodes[node.idx()].shape),
             NodeType::Bvh => {
