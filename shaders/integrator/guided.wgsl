@@ -69,7 +69,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             for (var i = 1u; i < arrayLength(&INFINITE_LIGHTS); i++) {
                 let emission = inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
                 radiance += throughput * emission;
-                let power = dot(throughput, vec4f(0.25)) * dot(emission, vec4f(0.25));
+                let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
                 for (var j = 0; j < pv_i; j++) {
                     path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
                 }
@@ -81,7 +81,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         {
             let emission = light_emission(result.light, ray, result, wl);
             radiance += throughput * emission;
-            let power = dot(throughput, vec4f(0.25)) * dot(emission, vec4f(0.25));
+            let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
             for (var j = 0; j < pv_i; j++) {
                 path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
             }
@@ -146,7 +146,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
                 break;
             }
             let duv = equal_area_dir_to_square(sample.dir);
-            path_vertices[pv_i] = PathVertex(train, duv, 0, dot(throughput, vec4f(0.25)));
+            path_vertices[pv_i] = PathVertex(train, duv, 0, dot(throughput, vec4f(1)));
             pv_i++;
         }
 
