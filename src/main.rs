@@ -614,6 +614,7 @@ struct GuidedState {
     bg: wgpu::BindGroup,
     iter: u32,
     next_iter: u32,
+    no_iter_after_sample: u32,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit, AnyBitPattern)]
@@ -658,7 +659,7 @@ impl ExtraState for GuidedState {
         mean: &wgpu::Texture,
         variance: &wgpu::Texture,
     ) {
-        if sample == self.next_iter {
+        if sample == self.next_iter && sample < self.no_iter_after_sample {
             self.iter += 1;
             self.next_iter += Self::INITIAL_SAMPLES << self.iter;
             println!("\rUpdating guidance model at sample {sample}");
@@ -828,6 +829,7 @@ impl GuidedState {
             bg,
             iter: 0,
             next_iter: Self::INITIAL_SAMPLES,
+            no_iter_after_sample: samples * 15 / 100,
         }
     }
 
