@@ -11,7 +11,9 @@ const PR_BSDF: f32 = 0.5;
 
 struct PathVertex {
     dir_node: u32,
+    dir_node_2: u32,
     dir: vec2f,
+    dir_filter_size: f32,
     radiance: f32,
     prefix_tp: f32,
 }
@@ -53,7 +55,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
     var throughput = vec4f(1);
 
-    var path_vertices: array<PathVertex, MAX_DEPTH>;
+    var path_vertices: array<PathVertex, MAX_LPV>;
     var pv_i = 0;
 
     var ray = ray_;
@@ -94,8 +96,8 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         let spatial_node = guide_locate(result.p);
-        let guide = BSP_TREE[spatial_node].left;
-        let train = BSP_TREE[spatial_node].right;
+        let guide = BSP_TREE[spatial_node.node].left;
+        let train = BSP_TREE[spatial_node.node].right;
 
         let bsdf = material_evaluate(result.material, result, wl);
 
@@ -110,22 +112,25 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         var sample: BsdfSample;
+        var filter_size: f32;
 
         let u = sample_1d();
         if u < pr_bsdf {
             // sample bsdf
             sample = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
             if sample.pdf > 0 {
-                var guide_pdf = 0.0;
+                var guide_pdf = vec2f();
                 if !sample.specular && pr_bsdf < 1 {
                     guide_pdf = guide_pdf(guide, sample.dir);
                 }
-                sample.pdf = pr_bsdf * (sample.pdf + guide_pdf);
+                sample.pdf = pr_bsdf * (sample.pdf + guide_pdf.x);
+                filter_size = guide_pdf.y;
             }
         } else {
             // sample path guidance
             sample = guide_sample(guide, vec3f(sample_2d(), sample_1d()));
             if sample.pdf > 0 {
+                filter_size = sample.f.x;
                 sample.f = bsdf_f(bsdf, -ray.d, sample.dir);
                 sample.pdf = (1 - pr_bsdf) * (sample.pdf + bsdf_pdf(bsdf, -ray.d, sample.dir));
             }
@@ -145,8 +150,11 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             if pv_i == MAX_LPV {
                 break;
             }
+            let offset = vec3f(sample_2d(), sample_1d()) - 0.5;
+            let alt_node = guide_locate(result.p + offset * spatial_node.filter_size);
+            let alt_train = BSP_TREE[alt_node.node].right;
             let duv = equal_area_dir_to_square(sample.dir);
-            path_vertices[pv_i] = PathVertex(train, duv, 0, dot(throughput, vec4f(1)));
+            path_vertices[pv_i] = PathVertex(train, alt_train, duv, filter_size, 0, dot(throughput, vec4f(1)));
             pv_i++;
         }
 
@@ -158,32 +166,45 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     for (var i = 0; i < pv_i; i++) {
         let v = path_vertices[i];
-        guide_splat(v.dir_node, v.dir, v.radiance);
+        guide_splat(v.dir_node, v.dir, v.radiance / 4);
+        let offset_dir = v.dir + (sample_2d() - 0.5) * v.dir_filter_size;
+        guide_splat(v.dir_node, wrap_equal_area_square(offset_dir), v.radiance / 4);
+
+        guide_splat(v.dir_node_2, v.dir, v.radiance / 4);
+        let offset_dir_2 = v.dir + (sample_2d() - 0.5) * v.dir_filter_size;
+        guide_splat(v.dir_node_2, wrap_equal_area_square(offset_dir_2), v.radiance / 4);
     }
 
     return radiance;
 }
 
-fn guide_locate(p_: vec3f) -> u32 {
-    var p = (p_ - BSP_VOLUME.min) / (BSP_VOLUME.max - BSP_VOLUME.min);
+struct SpatialInfo {
+    node: u32,
+    filter_size: vec3f,
+}
+
+fn guide_locate(p_: vec3f) -> SpatialInfo {
+    var size = BSP_VOLUME.max - BSP_VOLUME.min;
+    var p = (p_ - BSP_VOLUME.min) / size;
+    p = clamp(p, vec3f(0), vec3f(1));
 
     var node = 0u;
     var axis = 0;
     while BSP_TREE[node].is_leaf == 0 {
         if p[axis] < 0.5 {
             node = BSP_TREE[node].left;
-            p[axis] *= 2;
         } else {
             node = BSP_TREE[node].right;
             p[axis] -= 0.5;
-            p[axis] *= 2;
         }
+        p[axis] *= 2;
+        size[axis] *= 0.5;
         axis = (axis + 1) % 3;
     }
 
     atomicAdd(&BSP_TREE[node].count, 1);
 
-    return node;
+    return SpatialInfo(node, size);
 }
 
 fn guide_sample(dir_node: u32, random: vec3f) -> BsdfSample {
@@ -235,13 +256,14 @@ fn guide_sample(dir_node: u32, random: vec3f) -> BsdfSample {
 
     let dir = equal_area_square_to_dir(random.xy * size + pos);
 
-    return BsdfSample(vec4f(), dir, pdf, false);
+    return BsdfSample(vec4f(size), dir, pdf, false);
 }
 
-fn guide_pdf(dir_node: u32, dir: vec3f) -> f32 {
+fn guide_pdf(dir_node: u32, dir: vec3f) -> vec2f {
     var pos = equal_area_dir_to_square(dir);
     var node = dir_node;
     var pdf = 1 / (2 * TWO_PI);
+    var size = 1.0;
     while node != LEAF_SENTINEL {
         let children = DIR_TREE_GUIDE[node];
         let total = children[0].flux
@@ -253,8 +275,9 @@ fn guide_pdf(dir_node: u32, dir: vec3f) -> f32 {
         pdf *= 4 * children[child].flux / total;
         pos = fract(2 * pos);
         node = children[child].child;
+        size *= 0.5;
     }
-    return pdf;
+    return vec2f(pdf, size);
 }
 
 fn guide_splat(dir_node: u32, dir: vec2f, flux: f32) {

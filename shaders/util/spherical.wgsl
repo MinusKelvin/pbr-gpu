@@ -39,6 +39,25 @@ fn equal_area_square_to_dir(p: vec2f) -> vec3f {
     return vec3f(cos_phi * factor, sin_phi * factor, z);
 }
 
+fn wrap_equal_area_square(uv_: vec2f) -> vec2f {
+    var uv = uv_;
+    if uv.x < 0.0 {
+        uv.x = -uv.x;
+        uv.y = 1 - uv.y - EPSILON/2;
+    } else if uv.x >= 1 {
+        uv.x = 2 - uv.x - EPSILON/2;
+        uv.y = 1 - uv.y - EPSILON/2;
+    }
+    if uv.y < 0 {
+        uv.x = 1 - uv.x - EPSILON/2;
+        uv.y = -uv.y;
+    } else if uv.y > 1 {
+        uv.x = 1 - uv.x - EPSILON/2;
+        uv.y = 2 - uv.y - EPSILON/2;
+    }
+    return uv;
+}
+
 fn cos_theta(v: vec3f) -> f32 {
     return v.z;
 }

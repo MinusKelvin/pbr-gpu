@@ -296,6 +296,8 @@ fn main() -> anyhow::Result<()> {
     let mut last = queue.submit([]);
 
     for i in options.sample_offset..render_options.samples {
+        extra_state.before_sample(i, &device, &queue, &mean, &variance);
+
         let mut encoder = device.create_command_encoder(&Default::default());
 
         let begin = (i == options.sample_offset).then_some(0);
@@ -338,8 +340,6 @@ fn main() -> anyhow::Result<()> {
                 timeout: None,
             })
             .unwrap();
-
-        extra_state.after_sample(i, &device, &queue, &mean, &variance);
 
         last = new;
         eprint!("\r{i}         ");
@@ -582,7 +582,7 @@ impl Transform {
 trait ExtraState {
     fn add_bind_group_layouts<'a>(&'a mut self, bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>);
     fn setup_pass(&mut self, pass: &mut wgpu::ComputePass);
-    fn after_sample(
+    fn before_sample(
         &mut self,
         sample: u32,
         device: &wgpu::Device,
@@ -595,7 +595,7 @@ trait ExtraState {
 impl ExtraState for () {
     fn add_bind_group_layouts<'a>(&'a mut self, _bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>) {}
     fn setup_pass(&mut self, _pass: &mut wgpu::ComputePass) {}
-    fn after_sample(
+    fn before_sample(
         &mut self,
         _sample: u32,
         _device: &wgpu::Device,
@@ -650,7 +650,7 @@ impl ExtraState for GuidedState {
         pass.set_bind_group(2, &self.bg, &[]);
     }
 
-    fn after_sample(
+    fn before_sample(
         &mut self,
         sample: u32,
         device: &wgpu::Device,
@@ -658,11 +658,10 @@ impl ExtraState for GuidedState {
         mean: &wgpu::Texture,
         variance: &wgpu::Texture,
     ) {
-        let samples = sample + 1;
-        if samples == self.next_iter {
+        if sample == self.next_iter {
             self.iter += 1;
             self.next_iter += Self::INITIAL_SAMPLES << self.iter;
-            println!("Updating guidance model at sample {samples}");
+            println!("\rUpdating guidance model at sample {sample}");
 
             let bsp = Arc::new(OnceLock::new());
             let bsp2 = bsp.clone();
