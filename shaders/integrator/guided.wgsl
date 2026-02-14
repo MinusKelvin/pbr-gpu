@@ -120,7 +120,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         var pr_bsdf = PR_BSDF;
-        if bsdf_is_highly_specular(bsdf) {
+        if bsdf_is_highly_specular(bsdf) || guide == LEAF_SENTINEL {
             pr_bsdf = 1;
         }
 

@@ -686,16 +686,17 @@ impl GuidedState {
 
     fn new(device: &wgpu::Device, scene: &Scene, scale: f32, samples: u32, time: Duration) -> Self {
         let mut qt_nodes = vec![];
-        let initial_dir_tree = Self::refine_quadtree(&mut qt_nodes, &[], !0, 1.0, 0);
+        let mut initial_bsp = vec![BspNode {
+                is_leaf: 1,
+                left: !0,
+                right: !0,
+                count: 8*8,
+            }];
+        Self::refine_bsp(&mut initial_bsp, &[], &mut qt_nodes, 0, 0);
 
         let bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::bytes_of(&BspNode {
-                is_leaf: 1,
-                left: !0,
-                right: initial_dir_tree,
-                count: 0,
-            }),
+            contents: bytemuck::cast_slice(&initial_bsp),
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
         });
 
