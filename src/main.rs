@@ -1,12 +1,13 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytemuck::{AnyBitPattern, NoUninit, Pod, Zeroable};
 use clap::Parser;
+use clap::builder::{StringValueParser, TypedValueParser};
 use glam::{Mat3, Mat4, Vec2, Vec3, Vec4, Vec4Swizzles};
-use image::{Rgb, RgbImage};
+use image::{Rgb, RgbImage, Rgba32FImage};
 use ordered_float::OrderedFloat;
 use wgpu::PollType;
 use wgpu::util::DeviceExt;
@@ -28,6 +29,8 @@ struct Options {
 
     #[clap(short, long)]
     samples: Option<u32>,
+    #[clap(short, long, value_parser = StringValueParser::new().try_map(parse_time))]
+    time: Option<Duration>,
 
     #[clap(long, default_value = "simple")]
     integrator: String,
@@ -37,6 +40,9 @@ struct Options {
 
     #[clap(long, default_value = "0")]
     sample_offset: u32,
+
+    #[clap(long)]
+    scene_stats: bool,
 
     scene: PathBuf,
 }
@@ -48,23 +54,29 @@ fn main() -> anyhow::Result<()> {
 
     let (mut render_options, scene) = loader::pbrt::load_pbrt_scene(&spectrum_data, &options.scene);
 
+    let mut time_limit = Duration::MAX;
     if let Some(width) = options.width {
         render_options.width = width;
     }
     if let Some(height) = options.height {
         render_options.height = height;
     }
+    if let Some(time) = options.time {
+        render_options.samples = u32::MAX;
+        time_limit = time;
+    }
     if let Some(samples) = options.samples {
         render_options.samples = samples;
     }
 
-    scene.print_stats();
+    if options.scene_stats {
+        scene.print_stats();
+    }
 
     let instance = wgpu::Instance::new(&Default::default());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        required_features: wgpu::Features::TIMESTAMP_QUERY
-            | wgpu::Features::SHADER_INT64
+        required_features: wgpu::Features::SHADER_INT64
             | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgpu::Features::TEXTURE_BINDING_ARRAY
             | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
@@ -84,8 +96,13 @@ fn main() -> anyhow::Result<()> {
     }))?;
 
     let mut extra_state = match options.integrator.as_str() {
-        "guided" => Box::new(GuidedState::new(&device, &scene, render_options.samples))
-            as Box<dyn ExtraState>,
+        "guided" => Box::new(GuidedState::new(
+            &device,
+            &scene,
+            options.scale,
+            render_options.samples,
+            time_limit,
+        )) as Box<dyn ExtraState>,
         _ => Box::new(()),
     };
 
@@ -280,40 +297,25 @@ fn main() -> anyhow::Result<()> {
         cache: None,
     });
 
-    let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
-        label: None,
-        ty: wgpu::QueryType::Timestamp,
-        count: 2,
-    });
-
-    let query_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
-        mapped_at_creation: false,
-    });
-
     let mut last = queue.submit([]);
 
+    let start = Instant::now();
+    let mut num_samples = 0;
+
     for i in options.sample_offset..render_options.samples {
-        extra_state.before_sample(i, &device, &queue, &mean, &variance);
+        let time = start.elapsed();
+        if start.elapsed() >= time_limit {
+            break;
+        }
+
+        num_samples += 1;
+
+        extra_state.before_sample(i, time, &device, &queue, &mean, &variance);
 
         let mut encoder = device.create_command_encoder(&Default::default());
 
-        let begin = (i == options.sample_offset).then_some(0);
-        let end = (i + 1 == render_options.samples).then_some(1);
-
         {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: (begin.is_some() || end.is_some()).then_some(
-                    wgpu::ComputePassTimestampWrites {
-                        query_set: &query_set,
-                        beginning_of_pass_write_index: begin,
-                        end_of_pass_write_index: end,
-                    },
-                ),
-            });
+            let mut pass = encoder.begin_compute_pass(&Default::default());
 
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &scene_bg, &[]);
@@ -329,10 +331,6 @@ fn main() -> anyhow::Result<()> {
             );
         }
 
-        if end.is_some() {
-            encoder.resolve_query_set(&query_set, 0..2, &query_buffer, 0);
-        }
-
         let new = queue.submit([encoder.finish()]);
         device
             .poll(PollType::Wait {
@@ -342,113 +340,33 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
 
         last = new;
-        eprint!("\r{i}         ");
+        eprint!("\r{}         ", i + 1);
         std::io::stderr().flush().unwrap();
     }
     eprintln!();
+
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+
+    let took = start.elapsed();
 
     if std::env::var_os("MESA_VK_TRACE_PER_SUBMIT").is_some() {
         std::thread::sleep(Duration::from_secs(1));
     }
 
-    let mut encoder = device.create_command_encoder(&Default::default());
-
-    let downloaded = Arc::new(Mutex::new((0.0, vec![], vec![])));
-
-    let ns_per_tick = queue.get_timestamp_period();
-    let dl = downloaded.clone();
-    download_buffer(&device, &mut encoder, &query_buffer, move |data| {
-        let data: &[u64] = bytemuck::cast_slice(&data);
-
-        let ticks = data[1] - data[0];
-        dl.lock().unwrap().0 = ticks as f64 * ns_per_tick as f64 * 1e-9;
-    });
-
-    let dl = downloaded.clone();
-    download_texture(&device, &mut encoder, &mean, move |data| {
-        dl.lock().unwrap().1 = data;
-    });
-
-    let dl = downloaded.clone();
-    download_texture(&device, &mut encoder, &variance, move |data| {
-        dl.lock().unwrap().2 = data;
-    });
-
-    queue.submit([encoder.finish()]);
-
-    device.poll(wgpu::PollType::wait_indefinitely())?;
-
-    let (time, mean, variance) = Arc::into_inner(downloaded).unwrap().into_inner().unwrap();
-
-    let mut avg_rel_var = 0.0;
-    let mut avg_rel_err = 0.0;
-    for (&mean, &s) in mean.iter().zip(&variance) {
-        let samples = mean.w;
-        let mean = mean.xyz();
-        let s = s.xyz();
-
-        let var = if samples == 1.0 {
-            Vec3::INFINITY
-        } else {
-            s / (samples - 1.0)
-        };
-
-        let rel_var = var / mean;
-        let rel_var = Vec3::select(rel_var.is_finite_mask(), rel_var, Vec3::ZERO);
-        let rel_err = rel_var / samples;
-
-        avg_rel_var += rel_var.element_sum() / 3.0;
-        avg_rel_err += rel_err.element_sum() / 3.0;
-    }
-    let avg_rel_var = avg_rel_var / mean.len() as f32;
-    let avg_rel_err = avg_rel_err / mean.len() as f32;
-
-    let avg_sample_time = time as f32 / (render_options.samples - options.sample_offset) as f32;
+    let stats = collect_stats(&device, &queue, &mean, &variance, took);
 
     println!(
-        "Took {time:.2} seconds ({:.3?} / sample)",
-        Duration::from_secs_f32(avg_sample_time)
+        "Took {:.2} seconds ({:.3?} / sample)",
+        took.as_secs_f64(),
+        took / num_samples,
     );
-    println!("Average relative variance: {avg_rel_var}");
-    println!("Average relative error: {}", avg_rel_err.sqrt());
-    println!("Efficiency: {}", 1.0 / (avg_rel_var * avg_sample_time));
+    println!("Average relative variance: {}", stats.avg_rel_variance);
+    println!("Average relative error: {}", stats.avg_rel_error.sqrt());
+    println!("Efficiency: {}", stats.efficiency);
 
-    const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
-        [0.4124, 0.3576, 0.1805],
-        [0.2126, 0.7152, 0.0722],
-        [0.0193, 0.1192, 0.9505],
-    ]);
-    let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
-
-    let mut invalid_pixel = None;
-
-    image::RgbImage::from_vec(
-        render_options.width,
-        render_options.height,
-        mean.into_iter()
-            .enumerate()
-            .inspect(|&(i, raw)| {
-                if !raw.is_finite() {
-                    invalid_pixel = Some(i);
-                }
-            })
-            .map(|(_, xyza)| xyz_to_srgb * xyza.xyz() * options.scale)
-            .map(|rgb| {
-                let low = rgb * 12.92;
-                let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
-                Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high)
-            })
-            .map(|rgb| (rgb * 255.0).as_u8vec3())
-            .flat_map(|rgb| rgb.to_array())
-            .collect(),
-    )
-    .unwrap()
-    .save("img.png")
-    .unwrap();
-
-    if let Some(i) = invalid_pixel {
-        println!("Warning: Pixel {i} had non-finite value");
-    }
+    xyz_to_srgb(&stats.mean_image, options.scale)
+        .save("img.png")
+        .unwrap();
 
     Ok(())
 }
@@ -585,6 +503,7 @@ trait ExtraState {
     fn before_sample(
         &mut self,
         sample: u32,
+        time: Duration,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mean: &wgpu::Texture,
@@ -598,6 +517,7 @@ impl ExtraState for () {
     fn before_sample(
         &mut self,
         _sample: u32,
+        _time: Duration,
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
         _mean: &wgpu::Texture,
@@ -614,7 +534,9 @@ struct GuidedState {
     bg: wgpu::BindGroup,
     iter: u32,
     next_iter: u32,
-    no_iter_after_sample: u32,
+    train_budget_samples: u32,
+    train_budget_time: Duration,
+    scale: f32,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit, AnyBitPattern)]
@@ -654,15 +576,28 @@ impl ExtraState for GuidedState {
     fn before_sample(
         &mut self,
         sample: u32,
+        time: Duration,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mean: &wgpu::Texture,
         variance: &wgpu::Texture,
     ) {
-        if sample == self.next_iter && sample < self.no_iter_after_sample {
+        if sample == self.next_iter
+            && sample < self.train_budget_samples
+            && time < self.train_budget_time
+        {
             self.iter += 1;
             self.next_iter += Self::INITIAL_SAMPLES << self.iter;
             println!("\rUpdating guidance model at sample {sample}");
+
+            let stats = collect_stats(device, queue, mean, variance, time);
+            println!("Relative variance: {}", stats.avg_rel_variance);
+
+            let preview_path = format!("preview-{}.png", self.iter);
+            xyz_to_srgb(&stats.mean_image, self.scale)
+                .save(&preview_path)
+                .unwrap();
+            std::fs::copy(&preview_path, "img.png").unwrap();
 
             let bsp = Arc::new(OnceLock::new());
             let bsp2 = bsp.clone();
@@ -749,7 +684,7 @@ impl GuidedState {
     const C: u32 = 12000;
     const INITIAL_SAMPLES: u32 = 4;
 
-    fn new(device: &wgpu::Device, scene: &Scene, samples: u32) -> Self {
+    fn new(device: &wgpu::Device, scene: &Scene, scale: f32, samples: u32, time: Duration) -> Self {
         let mut qt_nodes = vec![];
         let initial_dir_tree = Self::refine_quadtree(&mut qt_nodes, &[], !0, 1.0, 0);
 
@@ -829,7 +764,9 @@ impl GuidedState {
             bg,
             iter: 0,
             next_iter: Self::INITIAL_SAMPLES,
-            no_iter_after_sample: samples * 15 / 100,
+            train_budget_samples: (samples as f64 * 0.15) as u32,
+            train_budget_time: time.mul_f64(0.15),
+            scale,
         }
     }
 
@@ -962,4 +899,135 @@ impl GuidedState {
         });
         img.save("dirtree.png").unwrap();
     }
+}
+
+fn parse_time(mut s: String) -> Result<Duration, std::num::ParseFloatError> {
+    s.make_ascii_lowercase();
+    let number = s.trim_end_matches(char::is_alphabetic);
+    let suffix = s[number.len()..].trim();
+    let number = number.parse::<f64>()?;
+
+    let unit_seconds = match suffix {
+        "ms" => 0.001,
+        "" | "s" | "sec" | "second" | "seconds" => 1.0,
+        "min" | "mins" | "minute" | "minutes" => 60.0,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
+        "d" | "day" | "days" => 24.0 * 3600.0,
+        _ => 1.0,
+    };
+
+    Ok(Duration::from_secs_f64(number * unit_seconds))
+}
+
+struct ImageStats {
+    mean_image: Rgba32FImage,
+    avg_rel_variance: f64,
+    avg_rel_error: f64,
+    efficiency: f64,
+}
+
+fn collect_stats(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    mean: &wgpu::Texture,
+    variance: &wgpu::Texture,
+    time: Duration,
+) -> ImageStats {
+    let width = mean.width();
+    let height = mean.height();
+
+    let mut encoder = device.create_command_encoder(&Default::default());
+
+    let downloaded = Arc::new(Mutex::new((vec![], vec![])));
+
+    let dl = downloaded.clone();
+    download_texture(&device, &mut encoder, &mean, move |data| {
+        dl.lock().unwrap().0 = data;
+    });
+
+    let dl = downloaded.clone();
+    download_texture(&device, &mut encoder, &variance, move |data| {
+        dl.lock().unwrap().1 = data;
+    });
+
+    queue.submit([encoder.finish()]);
+
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+
+    let (mean, variance) = Arc::into_inner(downloaded).unwrap().into_inner().unwrap();
+
+    let mut avg_rel_variance = 0.0;
+    let mut avg_rel_error = 0.0;
+    let mut avg_spp = 0.0;
+    for (&mean, &s) in mean.iter().zip(&variance) {
+        let samples = mean.w;
+        let mean = mean.xyz();
+        let s = s.xyz();
+
+        let var = if samples == 1.0 {
+            Vec3::INFINITY
+        } else {
+            s / (samples - 1.0)
+        };
+
+        let rel_var = var / mean;
+        let rel_var = Vec3::select(rel_var.is_finite_mask(), rel_var, Vec3::ZERO);
+        let rel_err = rel_var / samples;
+
+        avg_rel_variance += rel_var.element_sum() as f64 / 3.0;
+        avg_rel_error += rel_err.element_sum() as f64 / 3.0;
+        avg_spp += samples as f64;
+    }
+    let avg_rel_variance = avg_rel_variance / mean.len() as f64;
+    let avg_rel_error = avg_rel_error / mean.len() as f64;
+    let avg_spp = avg_spp / mean.len() as f64;
+
+    let avg_sample_time = time.as_secs_f64() / avg_spp;
+
+    let efficiency = 1.0 / (avg_rel_variance * avg_sample_time);
+
+    let mut invalid_pixel = None;
+
+    let mean_image = Rgba32FImage::from_vec(
+        width,
+        height,
+        mean.into_iter()
+            .enumerate()
+            .inspect(|&(i, raw)| {
+                if !raw.is_finite() {
+                    invalid_pixel = Some(i);
+                }
+            })
+            .flat_map(|(_, v)| v.to_array())
+            .collect(),
+    )
+    .unwrap();
+
+    if let Some(i) = invalid_pixel {
+        println!("Warning: Pixel {i} had non-finite value");
+    }
+
+    ImageStats {
+        mean_image,
+        avg_rel_variance,
+        avg_rel_error,
+        efficiency,
+    }
+}
+
+fn xyz_to_srgb(xyz: &Rgba32FImage, scale: f32) -> RgbImage {
+    const SRGB_TO_XYZ_T: Mat3 = Mat3::from_cols_array_2d(&[
+        [0.4124, 0.3576, 0.1805],
+        [0.2126, 0.7152, 0.0722],
+        [0.0193, 0.1192, 0.9505],
+    ]);
+    let xyz_to_srgb = SRGB_TO_XYZ_T.transpose().inverse();
+
+    RgbImage::from_fn(xyz.width(), xyz.height(), |x, y| {
+        let rgb = xyz_to_srgb * Vec4::from_array(xyz.get_pixel(x, y).0).xyz() * scale;
+        let low = rgb * 12.92;
+        let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
+        let srgb = Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high);
+        Rgb((srgb * 255.0).as_u8vec3().to_array())
+    })
 }
