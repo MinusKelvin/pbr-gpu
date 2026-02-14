@@ -10,10 +10,10 @@ const MAX_LPV = 10;
 const PR_BSDF: f32 = 0.5;
 
 struct PathVertex {
-    dir_node: u32,
-    dir_node_2: u32,
+    pos: vec3f,
     dir: vec2f,
     dir_filter_size: f32,
+    pos_filter_size: f32,
     radiance: f32,
     prefix_tp: f32,
 }
@@ -50,6 +50,19 @@ var<storage> DIR_TREE_GUIDE: array<array<DirTreeNode, 4>>;
 var<storage, read_write> DIR_TREE_TRAIN: array<array<DirTreeNodeAtomic, 4>>;
 @group(2) @binding(3)
 var<storage> BSP_VOLUME: BoundingVolume;
+
+const POS_STRAT = array(
+    vec3f(0, 0, 0),
+    vec3f(0.25, 0.75, 0.5),
+    vec3f(0.5, 0.25, 0.75),
+    vec3f(0.75, 0.5, 0.25),
+);
+const DIR_STRAT = array(
+    vec2f(0, 0),
+    vec2f(0.25, 0.5),
+    vec2f(0.5, 0.5),
+    vec2f(0.75, 0.25),
+);
 
 fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var radiance = vec4f();
@@ -150,11 +163,15 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             if pv_i == MAX_LPV {
                 break;
             }
-            let offset = vec3f(sample_2d(), sample_1d()) - 0.5;
-            let alt_node = guide_locate(result.p + offset * spatial_node.filter_size);
-            let alt_train = BSP_TREE[alt_node.node].right;
             let duv = equal_area_dir_to_square(sample.dir);
-            path_vertices[pv_i] = PathVertex(train, alt_train, duv, filter_size, 0, dot(throughput, vec4f(1)));
+            path_vertices[pv_i] = PathVertex(
+                result.p,
+                duv,
+                filter_size,
+                dot(spatial_node.filter_size, vec3f(1)) / 3.0,
+                0,
+                dot(throughput, vec4f(1))
+            );
             pv_i++;
         }
 
@@ -166,13 +183,17 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     for (var i = 0; i < pv_i; i++) {
         let v = path_vertices[i];
-        guide_splat(v.dir_node, v.dir, v.radiance / 4);
-        let offset_dir = v.dir + (sample_2d() - 0.5) * v.dir_filter_size;
-        guide_splat(v.dir_node, wrap_equal_area_square(offset_dir), v.radiance / 4);
-
-        guide_splat(v.dir_node_2, v.dir, v.radiance / 4);
-        let offset_dir_2 = v.dir + (sample_2d() - 0.5) * v.dir_filter_size;
-        guide_splat(v.dir_node_2, wrap_equal_area_square(offset_dir_2), v.radiance / 4);
+        let pos_jitter = vec3f(sample_2d(), sample_1d());
+        for (var j = 0; j < 4; j++) {
+            let node = guide_locate(v.pos + (fract(pos_jitter + POS_STRAT[j]) - 0.5) * v.pos_filter_size).node;
+            atomicAdd(&BSP_TREE[node].count, 1);
+            let dir_node = BSP_TREE[node].right;
+            let dir_jitter = sample_2d();
+            for (var k = 0; k < 4; k++) {
+                let offset_dir = v.dir + (fract(dir_jitter + DIR_STRAT[k]) - 0.5) * v.dir_filter_size;
+                guide_splat(dir_node, wrap_equal_area_square(offset_dir), v.radiance / 4);
+            }
+        }
     }
 
     return radiance;
@@ -201,8 +222,6 @@ fn guide_locate(p_: vec3f) -> SpatialInfo {
         size[axis] *= 0.5;
         axis = (axis + 1) % 3;
     }
-
-    atomicAdd(&BSP_TREE[node].count, 1);
 
     return SpatialInfo(node, size);
 }

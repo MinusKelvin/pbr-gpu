@@ -681,7 +681,7 @@ impl ExtraState for GuidedState {
 
 impl GuidedState {
     const LEAF_ENERGY_PORTION: f32 = 0.01;
-    const C: u32 = 12000;
+    const C: u32 = 32000;
     const INITIAL_SAMPLES: u32 = 4;
 
     fn new(device: &wgpu::Device, scene: &Scene, scale: f32, samples: u32, time: Duration) -> Self {
