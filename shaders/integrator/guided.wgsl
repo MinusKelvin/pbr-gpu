@@ -12,7 +12,6 @@ const PR_BSDF: f32 = 0.5;
 struct PathVertex {
     pos: vec3f,
     dir: vec2f,
-    dir_filter_size: f32,
     pos_filter_size: f32,
     radiance: f32,
     prefix_tp: f32,
@@ -125,25 +124,22 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         var sample: BsdfSample;
-        var filter_size: f32;
 
         let u = sample_1d();
         if u < pr_bsdf {
             // sample bsdf
             sample = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
             if sample.pdf > 0 {
-                var guide_pdf = vec2f();
+                var guide_pdf = 0.0;
                 if !sample.specular && pr_bsdf < 1 {
                     guide_pdf = guide_pdf(guide, sample.dir);
                 }
-                sample.pdf = pr_bsdf * (sample.pdf + guide_pdf.x);
-                filter_size = guide_pdf.y;
+                sample.pdf = pr_bsdf * (sample.pdf + guide_pdf);
             }
         } else {
             // sample path guidance
             sample = guide_sample(guide, vec3f(sample_2d(), sample_1d()));
             if sample.pdf > 0 {
-                filter_size = sample.f.x;
                 sample.f = bsdf_f(bsdf, -ray.d, sample.dir);
                 sample.pdf = (1 - pr_bsdf) * (sample.pdf + bsdf_pdf(bsdf, -ray.d, sample.dir));
             }
@@ -167,7 +163,6 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             path_vertices[pv_i] = PathVertex(
                 result.p,
                 duv,
-                filter_size,
                 dot(spatial_node.filter_size, vec3f(1)) / 3.0,
                 0,
                 dot(throughput, vec4f(1))
@@ -189,8 +184,9 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             atomicAdd(&BSP_TREE[node].count, 1);
             let dir_node = BSP_TREE[node].right;
             let dir_jitter = sample_2d();
+            let dir_filter_size = guide_filter_size(dir_node, v.dir);
             for (var k = 0; k < 4; k++) {
-                let offset_dir = v.dir + (fract(dir_jitter + DIR_STRAT[k]) - 0.5) * v.dir_filter_size;
+                let offset_dir = v.dir + (fract(dir_jitter + DIR_STRAT[k]) - 0.5) * dir_filter_size;
                 guide_splat(dir_node, wrap_equal_area_square(offset_dir), v.radiance / 4);
             }
         }
@@ -275,10 +271,10 @@ fn guide_sample(dir_node: u32, random: vec3f) -> BsdfSample {
 
     let dir = equal_area_square_to_dir(random.xy * size + pos);
 
-    return BsdfSample(vec4f(size), dir, pdf, false);
+    return BsdfSample(vec4f(), dir, pdf, false);
 }
 
-fn guide_pdf(dir_node: u32, dir: vec3f) -> vec2f {
+fn guide_pdf(dir_node: u32, dir: vec3f) -> f32 {
     var pos = equal_area_dir_to_square(dir);
     var node = dir_node;
     var pdf = 1 / (2 * TWO_PI);
@@ -296,7 +292,20 @@ fn guide_pdf(dir_node: u32, dir: vec3f) -> vec2f {
         node = children[child].child;
         size *= 0.5;
     }
-    return vec2f(pdf, size);
+    return pdf;
+}
+
+fn guide_filter_size(dir_node: u32, dir: vec2f) -> f32 {
+    var size = 1.0;
+    var node = dir_node;
+    var pos = dir;
+    while node != LEAF_SENTINEL {
+        let child = u32(pos.x >= 0.5) + 2 * u32(pos.y >= 0.5);
+        pos = fract(2 * pos);
+        node = DIR_TREE_TRAIN[node][child].child;
+        size *= 0.5;
+    }
+    return size;
 }
 
 fn guide_splat(dir_node: u32, dir: vec2f, flux: f32) {
