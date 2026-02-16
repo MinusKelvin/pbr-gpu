@@ -73,6 +73,8 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     var ray = ray_;
 
     var secondary_terminated = false;
+    var specular_bounce = false;
+    var bounce_pdf: f32;
 
     var depth = 0;
     while any(throughput > vec4f()) {
@@ -80,23 +82,50 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
         if !result.hit {
             // add infinite lights and finish
-            for (var i = 1u; i < arrayLength(&INFINITE_LIGHTS); i++) {
-                let emission = inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
-                radiance += throughput * emission;
-                let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
-                for (var j = 0; j < pv_i; j++) {
-                    path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
+            if depth == 0 || specular_bounce {
+                for (var i = 1u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+                    let emission = inf_light_emission(INFINITE_LIGHTS[i], ray, wl);
+                    radiance += throughput * emission;
+                    let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
+                    for (var j = 0; j < pv_i; j++) {
+                        path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
+                    }
+                }
+            } else {
+                for (var i = 1u; i < arrayLength(&INFINITE_LIGHTS); i++) {
+                    let ls_pdf = light_sampler_pmf(ROOT_LS, ray.o, INFINITE_LIGHTS[i])
+                        * light_pdf(INFINITE_LIGHTS[i], ray.o, ray.d);
+                    let emission = inf_light_emission(INFINITE_LIGHTS[i], ray, wl)
+                        * ls_mis_weight(bounce_pdf, ls_pdf);
+
+                    radiance += throughput * emission;
+                    let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
+                    for (var j = 0; j < pv_i - 1; j++) {
+                        path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
+                    }
                 }
             }
             break;
         }
 
         // add light emitted by surface
-        {
+        if depth == 0 || specular_bounce {
             let emission = light_emission(result.light, ray, result, wl);
+
             radiance += throughput * emission;
             let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
             for (var j = 0; j < pv_i; j++) {
+                path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
+            }
+        } else {
+            let ls_pdf = light_sampler_pmf(ROOT_LS, ray.o, result.light)
+                * light_pdf(result.light, ray.o, ray.d);
+            let emission = light_emission(result.light, ray, result, wl)
+                * ls_mis_weight(bounce_pdf, ls_pdf);
+
+            radiance += throughput * emission;
+            let power = dot(throughput, vec4f(1)) * dot(emission, vec4f(1));
+            for (var j = 0; j < pv_i - 1; j++) {
                 path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
             }
         }
@@ -123,12 +152,22 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             pr_bsdf = 1;
         }
 
+        // sample direct lighting
+        {
+            let contribution = _sample_direct_light(bsdf, guide, pr_bsdf, result, ray, wl);
+            radiance += throughput * contribution;
+            let power = dot(throughput, vec4f(1)) * dot(contribution, vec4f(1));
+            for (var j = 0; j < pv_i; j++) {
+                path_vertices[j].radiance += power / path_vertices[j].prefix_tp;
+            }
+        }
+
         var sample: BsdfSample;
 
-        let u = sample_1d();
-        if u < pr_bsdf {
+        let u = vec3f(sample_2d(), sample_1d());
+        if u.z < pr_bsdf {
             // sample bsdf
-            sample = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
+            sample = bsdf_sample(bsdf, -ray.d, vec3f(u.xy, u.z / pr_bsdf));
             if sample.pdf > 0 {
                 var guide_pdf = 0.0;
                 if !sample.specular && pr_bsdf < 1 {
@@ -138,7 +177,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             }
         } else {
             // sample path guidance
-            sample = guide_sample(guide, vec3f(sample_2d(), sample_1d()));
+            sample = guide_sample(guide, vec3f(u.xy, (u.z - pr_bsdf) / (1 - pr_bsdf)));
             if sample.pdf > 0 {
                 sample.f = bsdf_f(bsdf, -ray.d, sample.dir);
                 sample.pdf = (1 - pr_bsdf) * (sample.pdf + bsdf_pdf(bsdf, -ray.d, sample.dir));
@@ -150,6 +189,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         }
 
         throughput *= sample.f * abs(dot(bsdf_normal(bsdf), sample.dir)) / sample.pdf;
+        bounce_pdf = sample.pdf;
 
         if all(throughput == vec4f()) {
             break;
@@ -174,6 +214,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
         let offset = 10 * EPSILON * (1 + length(result.p));
         ray.d = sample.dir;
         ray.o = result.p + ray.d * offset;
+        specular_bounce = sample.specular;
     }
 
     for (var i = 0; i < pv_i; i++) {
@@ -193,6 +234,54 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
     }
 
     return radiance;
+}
+
+fn _sample_direct_light(
+    bsdf: Bsdf,
+    dir_node: u32,
+    pr_bsdf: f32,
+    hit: RaycastResult,
+    ray_: Ray,
+    wl: Wavelengths,
+) -> vec4f {
+    let light_id_sample = light_sampler_sample(ROOT_LS, hit.p, sample_1d());
+    if light_id_sample.pmf == 0 {
+        return vec4f();
+    }
+
+    let light_sample = light_sample(light_id_sample.light, hit.p, wl, sample_2d());
+    if light_sample.pdf_wrt_solid_angle == 0 {
+        return vec4f();
+    }
+
+    let pdf = light_sample.pdf_wrt_solid_angle * light_id_sample.pmf;
+
+    let bounce_pdf = mix(
+        guide_pdf(dir_node, light_sample.dir),
+        bsdf_pdf(bsdf, -ray_.d, light_sample.dir),
+        pr_bsdf,
+    );
+
+    let contribution = light_sample.emission
+        * bsdf_f(bsdf, -ray_.d, light_sample.dir)
+        * abs(dot(bsdf_normal(bsdf), light_sample.dir))
+        / pdf
+        * ls_mis_weight(pdf, bounce_pdf);
+
+    if all(contribution == vec4f()) {
+        return vec4f();
+    }
+
+    var ray = ray_;
+    let offset = 10 * EPSILON * (1 + length(hit.p));
+    ray.d = light_sample.dir;
+    ray.o = hit.p + ray.d * offset;
+
+    if scene_raycast(ray, light_sample.t_max - offset - 0.0001).hit {
+        return vec4f();
+    }
+
+    return contribution;
 }
 
 struct SpatialInfo {
@@ -278,19 +367,20 @@ fn guide_pdf(dir_node: u32, dir: vec3f) -> f32 {
     var pos = equal_area_dir_to_square(dir);
     var node = dir_node;
     var pdf = 1 / (2 * TWO_PI);
-    var size = 1.0;
     while node != LEAF_SENTINEL {
         let children = DIR_TREE_GUIDE[node];
         let total = children[0].flux
             + children[1].flux
             + children[2].flux
             + children[3].flux;
+        if total == 0.0 {
+            return 0.0;
+        }
 
         let child = u32(pos.x >= 0.5) + 2 * u32(pos.y >= 0.5);
         pdf *= 4 * children[child].flux / total;
         pos = fract(2 * pos);
         node = children[child].child;
-        size *= 0.5;
     }
     return pdf;
 }
@@ -317,4 +407,8 @@ fn guide_splat(dir_node: u32, dir: vec2f, flux: f32) {
         pos = fract(2 * pos);
         node = DIR_TREE_TRAIN[node][child].child;
     }
+}
+
+fn ls_mis_weight(p1: f32, p2: f32) -> f32 {
+    return p1 / (p1 + p2);
 }
