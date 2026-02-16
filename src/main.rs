@@ -359,6 +359,7 @@ fn main() -> anyhow::Result<()> {
         took.as_secs_f64(),
         took / num_samples,
     );
+    println!("Average variance: {}", stats.avg_variance);
     println!("Average relative variance: {}", stats.avg_rel_variance);
     println!("Average relative error: {}", stats.avg_rel_error.sqrt());
     println!("Efficiency: {}", stats.efficiency);
@@ -545,6 +546,7 @@ fn parse_time(mut s: String) -> Result<Duration, std::num::ParseFloatError> {
 
 struct ImageStats {
     mean_image: Rgba32FImage,
+    avg_variance: f64,
     avg_rel_variance: f64,
     avg_rel_error: f64,
     efficiency: f64,
@@ -580,6 +582,7 @@ fn collect_stats(
 
     let (mean, variance) = Arc::into_inner(downloaded).unwrap().into_inner().unwrap();
 
+    let mut avg_variance = 0.0;
     let mut avg_rel_variance = 0.0;
     let mut avg_rel_error = 0.0;
     let mut avg_spp = 0.0;
@@ -598,10 +601,12 @@ fn collect_stats(
         let rel_var = Vec3::select(rel_var.is_finite_mask(), rel_var, Vec3::ZERO);
         let rel_err = rel_var / samples;
 
+        avg_variance += var.element_sum() as f64 / 3.0;
         avg_rel_variance += rel_var.element_sum() as f64 / 3.0;
         avg_rel_error += rel_err.element_sum() as f64 / 3.0;
         avg_spp += samples as f64;
     }
+    let avg_variance = avg_variance / mean.len() as f64;
     let avg_rel_variance = avg_rel_variance / mean.len() as f64;
     let avg_rel_error = avg_rel_error / mean.len() as f64;
     let avg_spp = avg_spp / mean.len() as f64;
@@ -633,6 +638,7 @@ fn collect_stats(
 
     ImageStats {
         mean_image,
+        avg_variance,
         avg_rel_variance,
         avg_rel_error,
         efficiency,

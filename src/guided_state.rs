@@ -75,6 +75,7 @@ impl ExtraState for GuidedState {
             println!("\rUpdating guidance model at sample {sample}");
 
             let stats = super::collect_stats(device, queue, mean, variance, time);
+            println!("Average variance: {}", stats.avg_variance);
             println!("Relative variance: {}", stats.avg_rel_variance);
 
             let preview_path = format!("preview-{}.png", self.iter);
