@@ -15,6 +15,7 @@ struct PathVertex {
     pos_filter_size: f32,
     radiance: f32,
     prefix_tp: f32,
+    other_factors: f32,
 }
 
 const LEAF_SENTINEL: u32 = ~0u;
@@ -200,13 +201,15 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             if pv_i == MAX_LPV {
                 break;
             }
+            let other_factors = dot(sample.f, vec4f(1)) * abs(dot(bsdf_normal(bsdf), sample.dir));
             let duv = equal_area_dir_to_square(sample.dir);
             path_vertices[pv_i] = PathVertex(
                 result.p,
                 duv,
                 dot(spatial_node.filter_size, vec3f(1)) / 3.0,
                 0,
-                dot(throughput, vec4f(1)) * sample.pdf
+                dot(throughput, vec4f(1)),
+                other_factors * other_factors / sample.pdf,
             );
             pv_i++;
         }
@@ -220,6 +223,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
 
     for (var i = 0; i < pv_i; i++) {
         let v = path_vertices[i];
+        let value = v.radiance * v.radiance * v.other_factors;
         let pos_jitter = vec3f(sample_2d(), sample_1d());
         for (var j = 0; j < 4; j++) {
             let node = guide_locate(v.pos + (fract(pos_jitter + POS_STRAT[j]) - 0.5) * v.pos_filter_size).node;
@@ -229,7 +233,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
             let dir_filter_size = guide_filter_size(dir_node, v.dir);
             for (var k = 0; k < 4; k++) {
                 let offset_dir = v.dir + (fract(dir_jitter + DIR_STRAT[k]) - 0.5) * dir_filter_size;
-                guide_splat(dir_node, wrap_equal_area_square(offset_dir), v.radiance / 4);
+                guide_splat(dir_node, wrap_equal_area_square(offset_dir), value / 4);
             }
         }
     }

@@ -28,7 +28,7 @@ fn sample_uniform_sphere(random: vec2f) -> vec3f {
 
 fn sample_cosine_hemisphere(random: vec2f) -> vec3f {
     let disk = sample_uniform_disk(random.xy);
-    let z = sqrt(1 - dot(disk, disk));
+    let z = sqrt(max(0, 1 - dot(disk, disk)));
     return vec3f(disk, z);
 }
 

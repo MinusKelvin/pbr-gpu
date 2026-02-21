@@ -167,6 +167,10 @@ impl ExtraState for GuidedState {
                 usage: wgpu::BufferUsages::STORAGE,
             });
 
+            // std::fs::write("bsp.dat", bytemuck::cast_slice(&bsp)).unwrap();
+            // std::fs::write("guide.dat", bytemuck::cast_slice(&new_guide_tree)).unwrap();
+            // std::fs::write("train.dat", bytemuck::cast_slice(&new_train_tree)).unwrap();
+
             self.bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.bg_layout,
@@ -219,6 +223,13 @@ impl GuidedState {
         }];
         refine_bsp(&mut initial_bsp, &[], &mut [], &mut qt_nodes, 0, 0);
 
+        // let initial_bsp: Vec<BspNode> =
+        //     bytemuck::pod_collect_to_vec(&std::fs::read("bsp.dat").unwrap());
+        // let initial_guide: Vec<[GuideTreeNode; 4]> =
+        //     bytemuck::pod_collect_to_vec(&std::fs::read("guide.dat").unwrap());
+        // let qt_nodes: Vec<[TrainTreeNode; 4]> =
+        //     bytemuck::pod_collect_to_vec(&std::fs::read("train.dat").unwrap());
+
         let bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(&initial_bsp),
@@ -228,6 +239,7 @@ impl GuidedState {
         let initial_guide = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: &[0; std::mem::size_of::<[GuideTreeNode; 4]>()],
+            // contents: bytemuck::cast_slice(&initial_guide),
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -306,13 +318,13 @@ fn normalize_quadtree(
     assert_ne!(node, !0);
 
     let children_values = train[node as usize].map(|n| match n.child == !0 {
-        true => n.sum + n.comp,
+        true => ((n.sum + n.comp) * size * size).sqrt(),
         false => normalize_quadtree(result, train, n.child, size * 0.5),
     });
 
     let total: f32 = children_values.iter().sum();
 
-    assert!(total.is_finite());
+    assert!(total.is_finite(), "{total} {:?}", train[node as usize]);
 
     for (result, value) in result[node as usize].iter_mut().zip(children_values) {
         result.pr = match total == 0.0 {
