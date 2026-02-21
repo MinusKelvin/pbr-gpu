@@ -26,14 +26,15 @@ struct BspNode {
     count: atomic<u32>,
 }
 
-struct DirTreeNode {
-    flux: f32,
+struct GuideNode {
     child: u32,
+    pr: f32,
 }
 
-struct DirTreeNodeAtomic {
-    flux: atomic<f32>,
+struct TrainNode {
     child: u32,
+    sum: atomic<f32>,
+    comp: atomic<f32>,
 }
 
 struct BoundingVolume {
@@ -44,9 +45,9 @@ struct BoundingVolume {
 @group(2) @binding(0)
 var<storage, read_write> BSP_TREE: array<BspNode>;
 @group(2) @binding(1)
-var<storage> DIR_TREE_GUIDE: array<array<DirTreeNode, 4>>;
+var<storage> DIR_TREE_GUIDE: array<array<GuideNode, 4>>;
 @group(2) @binding(2)
-var<storage, read_write> DIR_TREE_TRAIN: array<array<DirTreeNodeAtomic, 4>>;
+var<storage, read_write> DIR_TREE_TRAIN: array<array<TrainNode, 4>>;
 @group(2) @binding(3)
 var<storage> BSP_VOLUME: BoundingVolume;
 
@@ -319,39 +320,31 @@ fn guide_sample(dir_node: u32, random: vec3f) -> BsdfSample {
     var pdf = 1 / (2 * TWO_PI);
     while node != LEAF_SENTINEL {
         let children = DIR_TREE_GUIDE[node];
-        let total_flux = children[0].flux
-            + children[1].flux
-            + children[2].flux
-            + children[3].flux;
-        if total_flux == 0.0 {
-            break;
-        }
-        u *= total_flux;
         size *= 0.5;
 
-        if u < children[0].flux + children[1].flux {
-            if u < children[0].flux {
-                u = u / children[0].flux;
-                pdf *= 4 * children[0].flux / total_flux;
+        if u < children[0].pr + children[1].pr {
+            if u < children[0].pr {
+                u = u / children[0].pr;
+                pdf *= 4 * children[0].pr;
                 node = children[0].child;
             } else {
-                u = (u - children[0].flux)
-                    / children[1].flux;
-                pdf *= 4 * children[1].flux / total_flux;
+                u = (u - children[0].pr)
+                    / children[1].pr;
+                pdf *= 4 * children[1].pr;
                 pos += vec2(size, 0);
                 node = children[1].child;
             }
         } else {
-            if u < children[0].flux + children[1].flux + children[2].flux {
-                u = (u - children[0].flux - children[1].flux)
-                    / children[2].flux;
-                pdf *= 4 * children[2].flux / total_flux;
+            if u < children[0].pr + children[1].pr + children[2].pr {
+                u = (u - children[0].pr - children[1].pr)
+                    / children[2].pr;
+                pdf *= 4 * children[2].pr;
                 pos += vec2(0, size);
                 node = children[2].child;
             } else {
-                u = (u - children[0].flux - children[1].flux - children[2].flux)
-                    / children[3].flux;
-                pdf *= 4 * children[3].flux / total_flux;
+                u = (u - children[0].pr - children[1].pr - children[2].pr)
+                    / children[3].pr;
+                pdf *= 4 * children[3].pr;
                 pos += vec2(size, size);
                 node = children[3].child;
             }
@@ -369,16 +362,8 @@ fn guide_pdf(dir_node: u32, dir: vec3f) -> f32 {
     var pdf = 1 / (2 * TWO_PI);
     while node != LEAF_SENTINEL {
         let children = DIR_TREE_GUIDE[node];
-        let total = children[0].flux
-            + children[1].flux
-            + children[2].flux
-            + children[3].flux;
-        if total == 0.0 {
-            return 0.0;
-        }
-
         let child = u32(pos.x >= 0.5) + 2 * u32(pos.y >= 0.5);
-        pdf *= 4 * children[child].flux / total;
+        pdf *= 4 * children[child].pr;
         pos = fract(2 * pos);
         node = children[child].child;
     }
@@ -398,14 +383,27 @@ fn guide_filter_size(dir_node: u32, dir: vec2f) -> f32 {
     return size;
 }
 
-fn guide_splat(dir_node: u32, dir: vec2f, flux: f32) {
+fn guide_splat(dir_node: u32, dir: vec2f, value: f32) {
     var node = dir_node;
     var pos = dir;
-    while node != LEAF_SENTINEL {
-        let child = u32(pos.x >= 0.5) + 2 * u32(pos.y >= 0.5);
-        atomicAdd(&DIR_TREE_TRAIN[node][child].flux, flux);
+    loop {
+        let child = &DIR_TREE_TRAIN[node][u32(pos.x >= 0.5) + 2 * u32(pos.y >= 0.5)];
+        if child.child == LEAF_SENTINEL {
+            // Kahan-Babuska-Neumaier summation
+            let old_sum = atomicAdd(&child.sum, value);
+            let new_sum = old_sum + value;
+            var lost: f32;
+            // no abs() because all values are positive
+            if old_sum >= value {
+                lost = (old_sum - new_sum) + value;
+            } else {
+                lost = (value - new_sum) + old_sum;
+            }
+            atomicAdd(&child.comp, lost);
+            break;
+        }
         pos = fract(2 * pos);
-        node = DIR_TREE_TRAIN[node][child].child;
+        node = child.child;
     }
 }
 

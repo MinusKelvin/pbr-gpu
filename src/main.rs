@@ -655,6 +655,9 @@ fn xyz_to_srgb(xyz: &Rgba32FImage, scale: f32) -> RgbImage {
 
     RgbImage::from_fn(xyz.width(), xyz.height(), |x, y| {
         let rgb = xyz_to_srgb * Vec4::from_array(xyz.get_pixel(x, y).0).xyz() * scale;
+        if !rgb.is_finite() {
+            return Rgb([255, 0, 255]);
+        }
         let low = rgb * 12.92;
         let high = rgb.powf(1.0 / 2.4) * 1.055 - 0.055;
         let srgb = Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high);

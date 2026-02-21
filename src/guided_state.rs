@@ -12,7 +12,7 @@ use crate::{ExtraState, storage_buffer_entry, writable_storage_buffer_entry};
 
 pub struct GuidedState {
     bsp: wgpu::Buffer,
-    dir_tree: wgpu::Buffer,
+    train_tree: wgpu::Buffer,
     bounds: wgpu::Buffer,
     bg_layout: wgpu::BindGroupLayout,
     bg: wgpu::BindGroup,
@@ -34,9 +34,17 @@ struct BspNode {
 
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 #[repr(C)]
-struct DirTreeNode {
-    flux: f32,
+struct GuideTreeNode {
     child: u32,
+    pr: f32,
+}
+
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
+#[repr(C)]
+struct TrainTreeNode {
+    child: u32,
+    sum: f32,
+    comp: f32,
 }
 
 #[derive(Copy, Clone, Debug, NoUninit)]
@@ -96,14 +104,14 @@ impl ExtraState for GuidedState {
                 },
             );
 
-            let dir_tree = Arc::new(OnceLock::new());
-            let dir_tree2 = dir_tree.clone();
+            let old_train_tree = Arc::new(OnceLock::new());
+            let old_train_tree2 = old_train_tree.clone();
             wgpu::util::DownloadBuffer::read_buffer(
                 device,
                 queue,
-                &self.dir_tree.slice(..),
+                &self.train_tree.slice(..),
                 move |result| {
-                    dir_tree2
+                    old_train_tree2
                         .set(bytemuck::pod_collect_to_vec(&result.unwrap()))
                         .unwrap();
                 },
@@ -112,13 +120,34 @@ impl ExtraState for GuidedState {
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
             let mut bsp = Arc::into_inner(bsp).unwrap().into_inner().unwrap();
-            let dir_tree = Arc::into_inner(dir_tree).unwrap().into_inner().unwrap();
+            let old_train_tree = Arc::into_inner(old_train_tree)
+                .unwrap()
+                .into_inner()
+                .unwrap();
 
-            let mut new_dir_tree = vec![];
+            let mut new_train_tree = vec![];
+            let mut new_guide_tree = old_train_tree
+                .iter()
+                .map(|n: &[TrainTreeNode; 4]| {
+                    n.map(|n| GuideTreeNode {
+                        child: n.child,
+                        pr: 0.0,
+                    })
+                })
+                .collect::<Vec<_>>();
 
             let split_threshold = Self::C * (1u32 << self.iter).isqrt();
 
-            refine_bsp(&mut bsp, &dir_tree, &mut new_dir_tree, split_threshold, 0);
+            refine_bsp(
+                &mut bsp,
+                &old_train_tree,
+                &mut new_guide_tree,
+                &mut new_train_tree,
+                split_threshold,
+                0,
+            );
+
+            self.bsp.destroy();
 
             self.bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
@@ -126,12 +155,17 @@ impl ExtraState for GuidedState {
                 usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
             });
 
-            let train = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            self.train_tree = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: None,
-                contents: bytemuck::cast_slice(&new_dir_tree),
+                contents: bytemuck::cast_slice(&new_train_tree),
                 usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
             });
-            let guide = std::mem::replace(&mut self.dir_tree, train);
+
+            let guide = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&new_guide_tree),
+                usage: wgpu::BufferUsages::STORAGE,
+            });
 
             self.bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
@@ -147,7 +181,7 @@ impl ExtraState for GuidedState {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: self.dir_tree.as_entire_binding(),
+                        resource: self.train_tree.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -183,7 +217,7 @@ impl GuidedState {
             right: !0,
             count: 8 * 8,
         }];
-        refine_bsp(&mut initial_bsp, &[], &mut qt_nodes, 0, 0);
+        refine_bsp(&mut initial_bsp, &[], &mut [], &mut qt_nodes, 0, 0);
 
         let bsp = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -193,7 +227,7 @@ impl GuidedState {
 
         let initial_guide = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: &[0; std::mem::size_of::<[DirTreeNode; 4]>()],
+            contents: &[0; std::mem::size_of::<[GuideTreeNode; 4]>()],
             usage: wgpu::BufferUsages::STORAGE,
         });
 
@@ -250,7 +284,7 @@ impl GuidedState {
 
         GuidedState {
             bsp,
-            dir_tree: initial_train,
+            train_tree: initial_train,
             bounds,
             bg_layout,
             bg,
@@ -263,9 +297,36 @@ impl GuidedState {
     }
 }
 
+fn normalize_quadtree(
+    result: &mut [[GuideTreeNode; 4]],
+    train: &[[TrainTreeNode; 4]],
+    node: u32,
+    size: f32,
+) -> f32 {
+    assert_ne!(node, !0);
+
+    let children_values = train[node as usize].map(|n| match n.child == !0 {
+        true => n.sum + n.comp,
+        false => normalize_quadtree(result, train, n.child, size * 0.5),
+    });
+
+    let total: f32 = children_values.iter().sum();
+
+    assert!(total.is_finite());
+
+    for (result, value) in result[node as usize].iter_mut().zip(children_values) {
+        result.pr = match total == 0.0 {
+            true => 0.25,
+            false => value / total,
+        }
+    }
+
+    total
+}
+
 fn refine_quadtree(
-    new_nodes: &mut Vec<[DirTreeNode; 4]>,
-    existing_nodes: &[[DirTreeNode; 4]],
+    new_nodes: &mut Vec<[TrainTreeNode; 4]>,
+    existing_nodes: &[[GuideTreeNode; 4]],
     node: u32,
     flux_ratio: f32,
     depth: u32,
@@ -276,29 +337,25 @@ fn refine_quadtree(
     }
 
     let children = match node == !0 {
-        true => [(!0, 0.25); 4],
-        false => {
-            let total_flux: f32 = existing_nodes[node as usize].iter().map(|n| n.flux).sum();
-            if total_flux == 0.0 {
-                [(!0, 0.25); 4]
-            } else {
-                existing_nodes[node as usize].map(|node| (node.child, node.flux / total_flux))
-            }
+        true => {
+            [GuideTreeNode {
+                child: !0,
+                pr: 0.25,
+            }; 4]
         }
+        false => existing_nodes[node as usize],
     };
 
-    let new_children = children.map(|(child, portion)| {
-        assert!(portion.is_finite(), "{:?}", existing_nodes[node as usize]);
-        DirTreeNode {
-            flux: 0.0,
-            child: refine_quadtree(
-                new_nodes,
-                existing_nodes,
-                child,
-                flux_ratio * portion,
-                depth + 1,
-            ),
-        }
+    let new_children = children.map(|node| TrainTreeNode {
+        sum: 0.0,
+        comp: 0.0,
+        child: refine_quadtree(
+            new_nodes,
+            existing_nodes,
+            node.child,
+            flux_ratio * node.pr,
+            depth + 1,
+        ),
     });
 
     let id = new_nodes.len() as u32;
@@ -308,8 +365,9 @@ fn refine_quadtree(
 
 fn refine_bsp(
     bsp: &mut Vec<BspNode>,
-    dir_tree: &[[DirTreeNode; 4]],
-    new_dir_tree: &mut Vec<[DirTreeNode; 4]>,
+    old_train_tree: &[[TrainTreeNode; 4]],
+    new_guide_tree: &mut [[GuideTreeNode; 4]],
+    new_train_tree: &mut Vec<[TrainTreeNode; 4]>,
     split_threshold: u32,
     node: u32,
 ) {
@@ -318,8 +376,22 @@ fn refine_bsp(
     if n.is_leaf == 0 {
         let left = n.left;
         let right = n.right;
-        refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, left);
-        refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, right);
+        refine_bsp(
+            bsp,
+            old_train_tree,
+            new_guide_tree,
+            new_train_tree,
+            split_threshold,
+            left,
+        );
+        refine_bsp(
+            bsp,
+            old_train_tree,
+            new_guide_tree,
+            new_train_tree,
+            split_threshold,
+            right,
+        );
         return;
     }
 
@@ -344,18 +416,35 @@ fn refine_bsp(
             count,
         });
 
-        refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, bsp_len);
-        refine_bsp(bsp, dir_tree, new_dir_tree, split_threshold, bsp_len + 1);
+        refine_bsp(
+            bsp,
+            old_train_tree,
+            new_guide_tree,
+            new_train_tree,
+            split_threshold,
+            bsp_len,
+        );
+        refine_bsp(
+            bsp,
+            old_train_tree,
+            new_guide_tree,
+            new_train_tree,
+            split_threshold,
+            bsp_len + 1,
+        );
         return;
     }
 
     n.left = n.right;
-    n.right = refine_quadtree(new_dir_tree, dir_tree, n.right, 1.0, 0);
+    if n.right != !0 {
+        normalize_quadtree(new_guide_tree, old_train_tree, n.right, 1.0);
+    }
+    n.right = refine_quadtree(new_train_tree, new_guide_tree, n.right, 1.0, 0);
     n.count = 0;
 }
 
-fn output_dirtree(dir_tree: &[[DirTreeNode; 4]], node: u32) {
-    fn height(dt: &[[DirTreeNode; 4]], node: u32) -> u32 {
+fn output_dirtree(dir_tree: &[[GuideTreeNode; 4]], node: u32) {
+    fn height(dt: &[[GuideTreeNode; 4]], node: u32) -> u32 {
         match node == !0 {
             true => 0,
             false => {
@@ -369,17 +458,17 @@ fn output_dirtree(dir_tree: &[[DirTreeNode; 4]], node: u32) {
     }
     let resolution = 1 << height(dir_tree, node);
 
-    fn flux_density(dt: &[[DirTreeNode; 4]], node: u32, pos: glam::Vec2, depth: u32) -> f32 {
+    fn pr_density(dt: &[[GuideTreeNode; 4]], node: u32, pos: glam::Vec2, depth: u32) -> f32 {
         let child = pos.cmpge(Vec2::splat(0.5)).bitmask() as usize;
         let child = &dt[node as usize][child];
         if child.child == !0 {
-            return child.flux * (1 << 2 * depth) as f32;
+            return child.pr * (1 << 2 * depth) as f32;
         }
-        flux_density(dt, child.child, (pos * 2.0).fract(), depth + 1)
+        pr_density(dt, child.child, (pos * 2.0).fract(), depth + 1)
     }
 
     let img = image::ImageBuffer::from_fn(resolution, resolution, |x, y| {
-        image::Luma([flux_density(
+        image::Luma([pr_density(
             dir_tree,
             node,
             Vec2::new(x as f32 + 0.5, y as f32 + 0.5) / resolution as f32,
