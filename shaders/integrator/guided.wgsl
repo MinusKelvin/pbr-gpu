@@ -206,7 +206,7 @@ fn integrate_ray(wl: Wavelengths, ray_: Ray) -> vec4f {
                 duv,
                 dot(spatial_node.filter_size, vec3f(1)) / 3.0,
                 0,
-                dot(throughput, vec4f(1))
+                dot(throughput, vec4f(1)) * sample.pdf
             );
             pv_i++;
         }
