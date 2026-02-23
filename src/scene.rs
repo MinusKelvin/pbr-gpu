@@ -74,6 +74,7 @@ pub struct Scene {
     pub uniform_lights: Vec<UniformLight>,
     pub image_lights: Vec<ImageLight>,
     pub area_lights: Vec<AreaLight>,
+    pub distant_lights: Vec<DistantLight>,
 
     pub table_spectra: Vec<TableSpectrum>,
     pub constant_spectra: Vec<ConstantSpectrum>,
@@ -155,6 +156,7 @@ impl Scene {
         println!("  Inf Uniform       {}", human_size_of(&self.uniform_lights));
         println!("  Inf Image         {}", human_size_of(&self.image_lights));
         println!("  Area              {}", human_size_of(&self.area_lights));
+        println!("  Distant           {}", human_size_of(&self.distant_lights));
         println!("  Inf Light List    {}", human_size_of(&self.infinite_lights));
         println!("Light Samplers");
         println!("  Uniform           {}", human_size_of(&self.uniform_light_samplers));
@@ -212,6 +214,7 @@ impl Scene {
                 storage_buffer_entry(129),
                 storage_buffer_entry(130),
                 storage_buffer_entry(131),
+                storage_buffer_entry(132),
                 storage_buffer_entry(160),
                 storage_buffer_entry(161),
                 storage_buffer_entry(162),
@@ -264,6 +267,7 @@ impl Scene {
         let uniform_lights = make_buffer(device, &self.uniform_lights);
         let image_lights = make_buffer(device, &self.image_lights);
         let area_lights = make_buffer(device, &self.area_lights);
+        let distant_lights = make_buffer(device, &self.distant_lights);
 
         let table_spectra = make_buffer(device, &self.table_spectra);
         let constant_spectra = make_buffer(device, &self.constant_spectra);
@@ -375,6 +379,7 @@ impl Scene {
                 make_entry(129, &uniform_lights),
                 make_entry(130, &image_lights),
                 make_entry(131, &area_lights),
+                make_entry(132, &distant_lights),
                 make_entry(160, &table_spectra),
                 make_entry(161, &constant_spectra),
                 make_entry(162, &rgb_albedo_spectra),

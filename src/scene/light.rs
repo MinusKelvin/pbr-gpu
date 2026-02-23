@@ -1,5 +1,5 @@
 use bytemuck::NoUninit;
-use glam::DMat4;
+use glam::{DMat4, Vec3};
 
 use crate::Transform;
 use crate::scene::{NodeId, Scene, ShapeId, SpectrumId, TableSampler2d, TextureId};
@@ -14,6 +14,7 @@ enum LightType {
     Uniform = 0 << LightId::TAG_SHIFT,
     Image = 1 << LightId::TAG_SHIFT,
     Area = 2 << LightId::TAG_SHIFT,
+    Distant = 3 << LightId::TAG_SHIFT,
 }
 
 #[allow(unused)]
@@ -47,6 +48,7 @@ impl LightId {
             LightType::Uniform => true,
             LightType::Image => true,
             LightType::Area => false,
+            LightType::Distant => true,
         }
     }
 }
@@ -62,6 +64,7 @@ impl Scene {
                 let area = self.shape_area(light.shape);
                 luminance * area
             }
+            LightType::Distant => 0.0,
         }
     }
 
@@ -113,6 +116,24 @@ impl Scene {
         id
     }
 
+    pub fn add_distant_light(
+        &mut self,
+        spectrum: SpectrumId,
+        dir: Vec3,
+        cos_radius: f32,
+    ) -> LightId {
+        let id = LightId::new(LightType::Distant, self.distant_lights.len());
+        self.infinite_lights.push(id);
+        self.distant_lights.push(DistantLight {
+            dir,
+            cos_radius,
+            spectrum,
+            light_sampling_path: u32::MAX,
+            _padding: [0; 2],
+        });
+        id
+    }
+
     pub fn set_area_light_transform(&mut self, light: LightId, transform: NodeId) {
         self.area_lights[light.idx()].transform_node = transform;
     }
@@ -122,6 +143,7 @@ impl Scene {
             LightType::Uniform => self.uniform_lights[light.idx()].light_sampling_path = path,
             LightType::Image => self.image_lights[light.idx()].light_sampling_path = path,
             LightType::Area => self.area_lights[light.idx()].light_sampling_path = path,
+            LightType::Distant => self.distant_lights[light.idx()].light_sampling_path = path,
         }
     }
 }
@@ -153,4 +175,14 @@ pub struct AreaLight {
     pub alpha: TextureId,
     pub two_sided: u32,
     pub light_sampling_path: u32,
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct DistantLight {
+    pub dir: Vec3,
+    pub cos_radius: f32,
+    pub spectrum: SpectrumId,
+    pub light_sampling_path: u32,
+    pub _padding: [u32; 2],
 }

@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::f32::consts::PI;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
@@ -648,6 +649,23 @@ impl SceneBuilder {
         } else {
             println!("Infinite light specifies neither image nor spectrum?");
         }
+    }
+
+    fn distant_light(&mut self, props: Props) {
+        let size = props.get_float("size").unwrap_or(0.5) as f32;
+        let cos_radius = (size / 2.0).to_radians().cos();
+
+        let spectrum = self
+            .spectrum_property(&props, "L", 1.0 / (2.0 * PI * (1.0 - cos_radius)), true)
+            .unwrap_or(SpectrumId::D65);
+
+        let from = props.get_vec3_list("from").map_or(DVec3::ZERO, |v| v[0]);
+        let to = props.get_vec3_list("to").map_or(DVec3::Z, |v| v[0]);
+
+        let light =
+            self.scene
+                .add_distant_light(spectrum, (from - to).normalize().as_vec3(), cos_radius);
+        self.lights.push(light);
     }
 
     fn unrecognized_light(&mut self, ty: &str) {

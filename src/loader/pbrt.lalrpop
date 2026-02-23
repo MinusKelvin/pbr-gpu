@@ -57,6 +57,7 @@ Statement: () = {
 
     "LightSource" <ty:String> <props:Properties> => match ty {
         "infinite" => builder.infinite_light(props.with_ctx("light", "infinite")),
+        "distant" => builder.distant_light(props.with_ctx("light", "distant")),
         _ => builder.unrecognized_light(ty),
     },
     "AreaLightSource" <ty:String> <props:Properties> => match ty {

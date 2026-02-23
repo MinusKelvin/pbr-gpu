@@ -2,6 +2,7 @@
 #import light/uniform.wgsl
 #import light/image.wgsl
 #import light/area.wgsl
+#import light/distant.wgsl
 
 @group(0) @binding(128)
 var<storage> INFINITE_LIGHTS: array<LightId>;
@@ -11,6 +12,8 @@ var<storage> UNIFORM_LIGHTS: array<UniformLight>;
 var<storage> IMAGE_LIGHTS: array<ImageLight>;
 @group(0) @binding(131)
 var<storage> AREA_LIGHTS: array<AreaLight>;
+@group(0) @binding(132)
+var<storage> DISTANT_LIGHTS: array<DistantLight>;
 
 struct LightId {
     id: u32
@@ -24,6 +27,7 @@ const LIGHT_TAG_MASK: u32 = ~LIGHT_IDX_MASK;
 const LIGHT_UNIFORM: u32 = 0 << LIGHT_TAG_SHIFT;
 const LIGHT_IMAGE: u32 = 1 << LIGHT_TAG_SHIFT;
 const LIGHT_AREA: u32 = 2 << LIGHT_TAG_SHIFT;
+const LIGHT_DISTANT: u32 = 3 << LIGHT_TAG_SHIFT;
 
 struct LightSample {
     emission: vec4f,
@@ -40,6 +44,9 @@ fn inf_light_emission(light: LightId, ray: Ray, wl: Wavelengths) -> vec4f {
         }
         case LIGHT_IMAGE {
             return inf_light_image_emission(IMAGE_LIGHTS[idx], ray, wl);
+        }
+        case LIGHT_DISTANT {
+            return inf_light_distant_emission(DISTANT_LIGHTS[idx], ray, wl);
         }
         default {
             return vec4f();
@@ -71,6 +78,9 @@ fn light_sample(light: LightId, ref_p: vec3f, wl: Wavelengths, random: vec2f) ->
         case LIGHT_AREA {
             return light_area_sample(AREA_LIGHTS[idx], ref_p, wl, random);
         }
+        case LIGHT_DISTANT {
+            return light_distant_sample(DISTANT_LIGHTS[idx], ref_p, wl, random);
+        }
         default {
             return LightSample();
         }
@@ -89,6 +99,9 @@ fn light_pdf(light: LightId, ref_p: vec3f, dir: vec3f) -> f32 {
         case LIGHT_AREA {
             return light_area_pdf(AREA_LIGHTS[idx], ref_p, dir);
         }
+        case LIGHT_DISTANT {
+            return light_distant_pdf(DISTANT_LIGHTS[idx], ref_p, dir);
+        }
         default {
             return 0;
         }
@@ -106,6 +119,9 @@ fn light_sample_path(light: LightId) -> u32 {
         }
         case LIGHT_AREA {
             return AREA_LIGHTS[idx].light_sampling_path;
+        }
+        case LIGHT_DISTANT {
+            return DISTANT_LIGHTS[idx].light_sampling_path;
         }
         default {
             return 0;
