@@ -8,6 +8,8 @@ use clap::Parser;
 use clap::builder::{StringValueParser, TypedValueParser};
 use glam::{Mat3, Mat4, Vec3, Vec4, Vec4Swizzles};
 use image::{Rgb, RgbImage, Rgba32FImage};
+use rand::prelude::SliceRandom;
+use rand_pcg::Pcg64;
 use wgpu::util::DeviceExt;
 
 use crate::guided_state::GuidedState;
@@ -33,6 +35,9 @@ struct Options {
 
     #[clap(long, default_value = "simple")]
     integrator: String,
+
+    #[clap(long, default_value = "independent")]
+    sampler: String,
 
     #[clap(long, default_value = "1")]
     scale: f32,
@@ -105,8 +110,14 @@ fn main() -> anyhow::Result<()> {
         _ => Box::new(()),
     };
 
+    let sampler_data = match options.sampler.as_str() {
+        "independent" => vec![0; 4],
+        "roberts" => bytemuck::pod_collect_to_vec(&roberts_sampler_data()),
+        s => unreachable!("invalid sampler `{s}`"),
+    };
+
     let flags = [
-        ("sampler".to_owned(), "independent".to_owned()),
+        ("sampler".to_owned(), options.sampler),
         ("camera".to_owned(), "projective".to_owned()),
         ("integrator".to_owned(), options.integrator),
     ]
@@ -137,6 +148,12 @@ fn main() -> anyhow::Result<()> {
     let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: bytemuck::bytes_of(&render_options.camera),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let sampler_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: &sampler_data,
         usage: wgpu::BufferUsages::STORAGE,
     });
 
@@ -213,6 +230,7 @@ fn main() -> anyhow::Result<()> {
                 },
                 count: None,
             },
+            storage_buffer_entry(8),
             storage_buffer_entry(16),
             wgpu::BindGroupLayoutEntry {
                 binding: 24,
@@ -254,6 +272,10 @@ fn main() -> anyhow::Result<()> {
                 resource: wgpu::BindingResource::TextureView(
                     &variance.create_view(&Default::default()),
                 ),
+            },
+            wgpu::BindGroupEntry {
+                binding: 8,
+                resource: sampler_buffer.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 16,
@@ -663,4 +685,25 @@ fn xyz_to_srgb(xyz: &Rgba32FImage, scale: f32) -> RgbImage {
         let srgb = Vec3::select(rgb.cmplt(Vec3::splat(0.0031308)), low, high);
         Rgb((srgb * 255.0).as_u8vec3().to_array())
     })
+}
+
+fn roberts_sampler_data() -> Vec<u32> {
+    const DIM: usize = 256;
+
+    let inv_d1 = 1.0 / (DIM as f64 + 1.0);
+
+    let mut phi = 2.0f64;
+    for _ in 0..25 {
+        phi = (1.0 + phi).powf(inv_d1);
+    }
+
+    let mut alphas: Vec<_> = (0..DIM).map(|i| {
+        let alpha = 1.0 / phi.powi((i + 1) as i32);
+        let alpha = 1.0 - alpha;
+        (alpha * 32f64.exp2()).round() as u32
+    }).collect();
+
+    alphas.shuffle(&mut Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96));
+
+    alphas
 }
