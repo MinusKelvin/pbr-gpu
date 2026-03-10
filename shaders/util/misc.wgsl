@@ -106,3 +106,14 @@ fn complex_sqrt(a: vec2f) -> vec2f {
     let w = a + vec2f(r, 0);
     return sqrt(r) * normalize(w);
 }
+
+fn fast_owen_scramble(v: u32, seed: u32) -> u32 {
+    // via pbr-book.org
+    var x = reverseBits(v);
+    x ^= x * 0x3d20adea;
+    x += seed;
+    x *= (seed >> 16) | 1;
+    x ^= x * 0x05526c56;
+    x ^= x * 0x53a22864;
+    return reverseBits(x);
+}
