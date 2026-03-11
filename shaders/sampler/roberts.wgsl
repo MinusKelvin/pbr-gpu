@@ -29,9 +29,6 @@ fn sample_1d() -> f32 {
     let h = hash_3d(vec3(SAMPLER.hash_key, dim));
     var v = h.z + SAMPLER.sample * ROBERTS_ALPHA[dim];
 
-    // scramble to mitigate patterns in low-dimensional projections
-    v = fast_owen_scramble(v, h.y);
-
     // we require a 0.32 fixed-point to float conversion.
     // this is how `bits_to_f32` is implemented, but we don't use it because it may be updated
     // to produce uniform floats in a different way.
