@@ -4,6 +4,7 @@
 
 struct DiffuseTransmitMaterial {
     normal_map: u32,
+    bump_map: TextureId,
     reflectance: TextureId,
     transmittance: TextureId,
     scale: TextureId,

@@ -5,6 +5,7 @@
 
 struct DiffuseMaterial {
     normal_map: u32,
+    bump_map: TextureId,
     texture: TextureId
 }
 

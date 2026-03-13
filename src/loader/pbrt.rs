@@ -25,7 +25,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let mut scene = Scene::new(spectrum_data);
     let spectrum = scene.add_rgb_albedo_spectrum(Vec3::new(1.0, 0.0, 1.0));
     let error_texture = scene.add_constant_texture(spectrum);
-    let error_material = scene.add_diffuse_material(error_texture, None);
+    let error_material = scene.add_diffuse_material(error_texture, None, None);
 
     let mut builder = SceneBuilder {
         base: path.parent().unwrap().to_path_buf(),
@@ -433,7 +433,9 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                self.scene.add_diffuse_material(texture, normal_map)
+                let bump_map = self.texture_property(&props, "displacement");
+                self.scene
+                    .add_diffuse_material(texture, normal_map, bump_map)
             }
             "diffusetransmission" => {
                 let reflectance =
@@ -455,12 +457,14 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
+                let bump_map = self.texture_property(&props, "displacement");
 
                 self.scene.add_diffuse_transmit_material(
                     reflectance,
                     transmittance,
                     scale,
                     normal_map,
+                    bump_map,
                 )
             }
             "conductor" => {
@@ -502,6 +506,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
+                let bump_map = self.texture_property(&props, "displacement");
 
                 self.scene.add_conductor_material(
                     ior_re,
@@ -509,6 +514,7 @@ impl SceneBuilder {
                     u_roughness,
                     v_roughness,
                     normal_map,
+                    bump_map,
                 )
             }
             "dielectric" => {
@@ -532,9 +538,15 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
+                let bump_map = self.texture_property(&props, "displacement");
 
-                self.scene
-                    .add_dielectric_material(ior, u_roughness, v_roughness, normal_map)
+                self.scene.add_dielectric_material(
+                    ior,
+                    u_roughness,
+                    v_roughness,
+                    normal_map,
+                    bump_map,
+                )
             }
             "thindielectric" => {
                 let ior = self
@@ -543,8 +555,10 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
+                let bump_map = self.texture_property(&props, "displacement");
 
-                self.scene.add_thin_dielectric_material(ior, normal_map)
+                self.scene
+                    .add_thin_dielectric_material(ior, normal_map, bump_map)
             }
             "metallicworkflow" => {
                 let base_color =
@@ -577,6 +591,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
+                let bump_map = self.texture_property(&props, "displacement");
 
                 self.scene.add_metallic_workflow_material(
                     base_color,
@@ -584,6 +599,7 @@ impl SceneBuilder {
                     u_roughness,
                     v_roughness,
                     normal_map,
+                    bump_map,
                 )
             }
             "mix" => {

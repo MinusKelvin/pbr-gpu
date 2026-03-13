@@ -8,6 +8,7 @@
 
 struct DielectricMaterial {
     normal_map: u32,
+    bump_map: TextureId,
     ior: SpectrumId,
     roughness_u: TextureId,
     roughness_v: TextureId,

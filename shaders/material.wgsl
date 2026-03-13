@@ -121,6 +121,27 @@ fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths)
         );
     }
 
+    let bump_map = material_get_bump_map(material);
+    if bump_map.id != ~0u && dot(hit.tangent, hit.tangent) > 1.0e-9 {
+        let delta = 0.000005;
+        let bump_p = texture_evaluate(bump_map, hit.uv, wl).x;
+        let bump_pu = texture_evaluate(bump_map, hit.uv + vec2(delta, 0), wl).x;
+        let bump_pv = texture_evaluate(bump_map, hit.uv + vec2(0, delta), wl).x;
+
+        let db_du = (bump_pu - bump_p) / delta / length(hit.tangent);
+        let db_dv = (bump_pv - bump_p) / delta / length(hit.tangent);
+
+        tangent = normalize(tangent + db_du * hit.n);
+        var bitangent = bsdf.from_local[1] + db_dv * hit.n;
+        bitangent = normalize(bitangent - dot(bitangent, tangent) * tangent);
+
+        bsdf.from_local = mat3x3f(
+            tangent,
+            bitangent,
+            cross(tangent, bitangent),
+        );
+    }
+
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
         case MATERIAL_DIFFUSE {
@@ -170,6 +191,33 @@ fn material_get_normal_map(material: MaterialId) -> u32 {
         }
         default {
             return ~0u;
+        }
+    }
+}
+
+fn material_get_bump_map(material: MaterialId) -> TextureId {
+    let idx = material.id & MATERIAL_IDX_MASK;
+    switch material.id & MATERIAL_TAG_MASK {
+        case MATERIAL_DIFFUSE {
+            return DIFFUSE_MATERIALS[idx].bump_map;
+        }
+        case MATERIAL_DIFFUSE_TRANSMIT {
+            return DIFFUSE_TRANSMIT_MATERIALS[idx].bump_map;
+        }
+        case MATERIAL_CONDUCTOR {
+            return CONDUCTOR_MATERIALS[idx].bump_map;
+        }
+        case MATERIAL_DIELECTRIC {
+            return DIELECTRIC_MATERIALS[idx].bump_map;
+        }
+        case MATERIAL_THIN_DIELECTRIC {
+            return THIN_DIELECTRIC_MATERIALS[idx].bump_map;
+        }
+        case MATERIAL_METALLIC_WORKFLOW {
+            return METALLIC_WORKFLOW_MATERIALS[idx].bump_map;
+        }
+        default {
+            return TextureId(~0u);
         }
     }
 }

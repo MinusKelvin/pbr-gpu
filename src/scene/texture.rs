@@ -42,6 +42,10 @@ impl TextureId {
     fn idx(self) -> usize {
         (self.0 & Self::IDX_MASK) as usize
     }
+
+    pub fn raw(self) -> u32 {
+        self.0
+    }
 }
 
 impl Scene {

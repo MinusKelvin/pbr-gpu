@@ -8,6 +8,7 @@
 
 struct ThinDielectricMaterial {
     normal_map: u32,
+    bump_map: TextureId,
     ior: SpectrumId,
 }
 

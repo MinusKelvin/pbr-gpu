@@ -8,6 +8,7 @@
 
 struct ConductorMaterial {
     normal_map: u32,
+    bump_map: TextureId,
     ior_re: TextureId,
     ior_im: TextureId,
     roughness_u: TextureId,

@@ -68,6 +68,13 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
     }
     let n = select(hit.p, -hit.p, sphere.flip_normal != 0u);
     let tangent = vec3f(-hit.p.y, hit.p.x, 0);
+
+    var u = atan2(tangent.x, tangent.y);
+    if u < 0 {
+        u += TWO_PI;
+    }
+    let v = (acos(hit.p.z) - acos(sphere.z_min)) / (acos(sphere.z_max) - acos(sphere.z_min));
+
     return RaycastResult(
         true,
         hit.p,
@@ -77,7 +84,7 @@ fn sphere_raycast(sphere: Sphere, ray: Ray, t_max: f32) -> RaycastResult {
         hit.t,
         MaterialId(),
         LightId(),
-        vec2f(),
+        vec2f(u / TWO_PI, v),
     );
 }
 
