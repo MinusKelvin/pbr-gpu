@@ -8,10 +8,10 @@
 
 struct DielectricMaterial {
     normal_map: u32,
-    bump_map: TextureId,
+    bump_map: FloatTextureId,
     ior: SpectrumId,
-    roughness_u: TextureId,
-    roughness_v: TextureId,
+    roughness_u: FloatTextureId,
+    roughness_v: FloatTextureId,
 }
 
 fn material_dielectric_evaluate(material: DielectricMaterial, uv: vec2f, wl: Wavelengths) -> BsdfParams {
@@ -19,8 +19,8 @@ fn material_dielectric_evaluate(material: DielectricMaterial, uv: vec2f, wl: Wav
     bsdf.id = BSDF_DIELECTRIC;
     bsdf.v0 = spectrum_sample(material.ior, wl);
     let alpha = trowbridge_reitz_adjust_alpha(vec2f(
-        texture_evaluate(material.roughness_u, uv, wl).x,
-        texture_evaluate(material.roughness_v, uv, wl).x,
+        float_texture_evaluate(material.roughness_u, uv),
+        float_texture_evaluate(material.roughness_v, uv),
     ));
     bsdf.v1 = vec4f(alpha, 0, 0);
     return bsdf;

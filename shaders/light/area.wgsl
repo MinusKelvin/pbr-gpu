@@ -6,7 +6,7 @@ struct AreaLight {
     spectrum: SpectrumId,
     transform_node: NodeId,
     shape: ShapeId,
-    alpha: TextureId,
+    alpha: FloatTextureId,
     two_sided: u32,
     light_sampling_path: u32,
 }
@@ -28,7 +28,7 @@ fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: ve
         return LightSample();
     }
 
-    let alpha = texture_evaluate(light.alpha, shape_sample.uv, Wavelengths()).x;
+    let alpha = float_texture_evaluate(light.alpha, shape_sample.uv);
     if alpha < 1 {
         let h = hash_4d(vec4u(980736245, bitcast<vec3u>(shape_sample.p))).z;
         let u = bits_to_f32(h);

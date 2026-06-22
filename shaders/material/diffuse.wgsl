@@ -5,14 +5,14 @@
 
 struct DiffuseMaterial {
     normal_map: u32,
-    bump_map: TextureId,
-    texture: TextureId
+    bump_map: FloatTextureId,
+    texture: SpectrumTextureId
 }
 
 fn material_diffuse_evaluate(material: DiffuseMaterial, uv: vec2f, wl: Wavelengths) -> BsdfParams {
     var bsdf: BsdfParams;
     bsdf.id = BSDF_DIFFUSE;
-    bsdf.v0 = texture_evaluate(material.texture, uv, wl);
+    bsdf.v0 = spectrum_texture_evaluate(material.texture, uv, wl);
     return bsdf;
 }
 

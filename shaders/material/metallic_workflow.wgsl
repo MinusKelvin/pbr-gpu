@@ -8,11 +8,11 @@
 
 struct MetallicWorkflowMaterial {
     normal_map: u32,
-    bump_map: TextureId,
-    base_color: TextureId,
-    metallic: TextureId,
-    roughness_u: TextureId,
-    roughness_v: TextureId,
+    bump_map: FloatTextureId,
+    base_color: SpectrumTextureId,
+    metallic: FloatTextureId,
+    roughness_u: FloatTextureId,
+    roughness_v: FloatTextureId,
 }
 
 fn material_metallic_workflow_evaluate(
@@ -22,12 +22,12 @@ fn material_metallic_workflow_evaluate(
 ) -> BsdfParams {
     var bsdf: BsdfParams;
     bsdf.id = BSDF_METALLIC_WORKFLOW;
-    bsdf.v0 = texture_evaluate(material.base_color, uv, wl);
+    bsdf.v0 = spectrum_texture_evaluate(material.base_color, uv, wl);
     let alpha = trowbridge_reitz_adjust_alpha(vec2f(
-        texture_evaluate(material.roughness_u, uv, wl).x,
-        texture_evaluate(material.roughness_v, uv, wl).x,
+        float_texture_evaluate(material.roughness_u, uv),
+        float_texture_evaluate(material.roughness_v, uv),
     ));
-    let metallic = texture_evaluate(material.metallic, uv, wl).x;
+    let metallic = float_texture_evaluate(material.metallic, uv);
     bsdf.v1 = vec4f(alpha, metallic, 0);
     return bsdf;
 }

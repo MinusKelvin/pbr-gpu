@@ -4,18 +4,18 @@
 
 struct DiffuseTransmitMaterial {
     normal_map: u32,
-    bump_map: TextureId,
-    reflectance: TextureId,
-    transmittance: TextureId,
-    scale: TextureId,
+    bump_map: FloatTextureId,
+    reflectance: SpectrumTextureId,
+    transmittance: SpectrumTextureId,
+    scale: FloatTextureId,
 }
 
 fn material_diffuse_transmit_evaluate(material: DiffuseTransmitMaterial, uv: vec2f, wl: Wavelengths) -> BsdfParams {
     var bsdf: BsdfParams;
     bsdf.id = BSDF_DIFFUSE_TRANSMIT;
-    let scale = texture_evaluate(material.scale, uv, wl);
-    bsdf.v0 = texture_evaluate(material.reflectance, uv, wl) * scale;
-    bsdf.v1 = texture_evaluate(material.transmittance, uv, wl) * scale;
+    let scale = float_texture_evaluate(material.scale, uv);
+    bsdf.v0 = spectrum_texture_evaluate(material.reflectance, uv, wl) * scale;
+    bsdf.v1 = spectrum_texture_evaluate(material.transmittance, uv, wl) * scale;
     return bsdf;
 }
 

@@ -123,7 +123,14 @@ fn main() -> anyhow::Result<()> {
     ]
     .into_iter()
     .collect();
-    let shader = shader::load_shader(&device, "entrypoint/megakernel.wgsl", &flags)?;
+    let shader = shader::load_shader("entrypoint/megakernel.wgsl", &flags)?;
+
+    let generated = scene.generated_texture_shader_code();
+
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl((shader + &generated).into()),
+    });
 
     let scene_bg_layout = scene.make_bind_group_layout(&device);
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
@@ -697,13 +704,18 @@ fn roberts_sampler_data() -> Vec<u32> {
         phi = (1.0 + phi).powf(inv_d1);
     }
 
-    let mut alphas: Vec<_> = (0..DIM).map(|i| {
-        let alpha = 1.0 / phi.powi((i + 1) as i32);
-        let alpha = 1.0 - alpha;
-        (alpha * 32f64.exp2()).round() as u32
-    }).collect();
+    let mut alphas: Vec<_> = (0..DIM)
+        .map(|i| {
+            let alpha = 1.0 / phi.powi((i + 1) as i32);
+            let alpha = 1.0 - alpha;
+            (alpha * 32f64.exp2()).round() as u32
+        })
+        .collect();
 
-    alphas.shuffle(&mut Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96));
+    alphas.shuffle(&mut Pcg64::new(
+        0xcafef00dd15ea5e5,
+        0xa02bdbf7bb3c0a7ac28fa16a64abf96,
+    ));
 
     alphas
 }

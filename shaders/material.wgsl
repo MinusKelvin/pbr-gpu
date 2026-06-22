@@ -68,14 +68,14 @@ struct Bsdf {
 struct MixMaterial {
     m1: MaterialId,
     m2: MaterialId,
-    amount: TextureId,
+    amount: FloatTextureId,
 }
 
 fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths) -> Bsdf {
     var material = material_;
     while (material.id & MATERIAL_TAG_MASK) == MATERIAL_MIX {
         let mix = MIX_MATERIALS[material.id & MATERIAL_IDX_MASK];
-        let amount = texture_evaluate(mix.amount, hit.uv, wl).x;
+        let amount = float_texture_evaluate(mix.amount, hit.uv);
         let h = hash_4d(vec4u(bitcast<vec2u>(hit.uv), mix.m1.id, mix.m2.id)).w;
         let u = bits_to_f32(h);
         if u < amount {
@@ -124,9 +124,9 @@ fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths)
     let bump_map = material_get_bump_map(material);
     if bump_map.id != ~0u && dot(hit.tangent, hit.tangent) > 1.0e-9 {
         let delta = 0.000005;
-        let bump_p = texture_evaluate(bump_map, hit.uv, wl).x;
-        let bump_pu = texture_evaluate(bump_map, hit.uv + vec2(delta, 0), wl).x;
-        let bump_pv = texture_evaluate(bump_map, hit.uv + vec2(0, delta), wl).x;
+        let bump_p = float_texture_evaluate(bump_map, hit.uv);
+        let bump_pu = float_texture_evaluate(bump_map, hit.uv + vec2(delta, 0));
+        let bump_pv = float_texture_evaluate(bump_map, hit.uv + vec2(0, delta));
 
         let db_du = (bump_pu - bump_p) / delta / length(hit.tangent);
         let db_dv = (bump_pv - bump_p) / delta / length(hit.tangent);
@@ -195,7 +195,7 @@ fn material_get_normal_map(material: MaterialId) -> u32 {
     }
 }
 
-fn material_get_bump_map(material: MaterialId) -> TextureId {
+fn material_get_bump_map(material: MaterialId) -> FloatTextureId {
     let idx = material.id & MATERIAL_IDX_MASK;
     switch material.id & MATERIAL_TAG_MASK {
         case MATERIAL_DIFFUSE {
@@ -217,7 +217,7 @@ fn material_get_bump_map(material: MaterialId) -> TextureId {
             return METALLIC_WORKFLOW_MATERIALS[idx].bump_map;
         }
         default {
-            return TextureId(~0u);
+            return FloatTextureId(~0u);
         }
     }
 }

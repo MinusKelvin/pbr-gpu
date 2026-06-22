@@ -51,14 +51,6 @@ pub struct Scene {
     pub transform_nodes: Vec<TransformNode>,
     pub primitive_nodes: Vec<PrimitiveNode>,
 
-    pub constant_tex: Vec<ConstantTexture>,
-    pub image_float_tex: Vec<ImageFloatTexture>,
-    pub image_rgb_tex: Vec<ImageRgbTexture>,
-    pub scale_tex: Vec<ScaleTexture>,
-    pub mix_tex: Vec<MixTexture>,
-    pub checkerboard_tex: Vec<CheckerboardTexture>,
-    pub conductor_refl_tex: Vec<ConductorReflTexture>,
-
     pub images: Vec<ImageData>,
 
     pub diffuse_mat: Vec<DiffuseMaterial>,
@@ -94,6 +86,11 @@ pub struct Scene {
     pub root_ls: Option<LightSamplerId>,
 
     pub named_spectra: HashMap<&'static str, SpectrumId>,
+
+    float_texture_match: String,
+    spectrum_texture_match: String,
+    float_code: HashMap<String, u32>,
+    spectrum_code: HashMap<String, u32>,
 }
 
 pub enum ImageData {
@@ -131,13 +128,8 @@ impl Scene {
         println!("  Transforms        {}", human_size_of(&self.transform_nodes));
         println!("  BVH               {}", human_size_of(&self.bvh_nodes));
         println!("Texture Metadata");
-        println!("  Constant          {}", human_size_of(&self.constant_tex));
-        println!("  Float image       {}", human_size_of(&self.image_float_tex));
-        println!("  Color image       {}", human_size_of(&self.image_rgb_tex));
-        println!("  Scale             {}", human_size_of(&self.scale_tex));
-        println!("  Mix               {}", human_size_of(&self.mix_tex));
-        println!("  Checkerboard      {}", human_size_of(&self.mix_tex));
-        println!("  Conductor Refl    {}", human_size_of(&self.conductor_refl_tex));
+        println!("  Spectrum          {}", self.spectrum_code.len());
+        println!("  Float             {}", self.float_code.len());
         println!("  Image data        {}", human_size(self.images.iter().map(|img| match img {
             ImageData::Float(img) => std::mem::size_of_val(img.as_raw().as_slice()),
             ImageData::FloatRgb(img) => std::mem::size_of_val(img.as_raw().as_slice()),
@@ -184,9 +176,6 @@ impl Scene {
                 storage_buffer_entry(33),
                 storage_buffer_entry(34),
                 storage_buffer_entry(35),
-                storage_buffer_entry(64),
-                storage_buffer_entry(66),
-                storage_buffer_entry(67),
                 wgpu::BindGroupLayoutEntry {
                     binding: 68,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -199,10 +188,6 @@ impl Scene {
                         NonZero::new(self.images.len() as u32).unwrap_or(NonZero::new(1).unwrap()),
                     ),
                 },
-                storage_buffer_entry(69),
-                storage_buffer_entry(70),
-                storage_buffer_entry(71),
-                storage_buffer_entry(72),
                 storage_buffer_entry(96),
                 storage_buffer_entry(97),
                 storage_buffer_entry(98),
@@ -245,14 +230,6 @@ impl Scene {
         let bvh = make_buffer(device, &self.bvh_nodes);
         let transform = make_buffer(device, &self.transform_nodes);
         let primitive = make_buffer(device, &self.primitive_nodes);
-
-        let constant_tex = make_buffer(device, &self.constant_tex);
-        let image_float_tex = make_buffer(device, &self.image_float_tex);
-        let image_rgb_tex = make_buffer(device, &self.image_rgb_tex);
-        let scale_tex = make_buffer(device, &self.scale_tex);
-        let mix_tex = make_buffer(device, &self.mix_tex);
-        let checkerboard_tex = make_buffer(device, &self.checkerboard_tex);
-        let conductor_refl_tex = make_buffer(device, &self.conductor_refl_tex);
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
@@ -357,17 +334,10 @@ impl Scene {
                 make_entry(33, &bvh),
                 make_entry(34, &transform),
                 make_entry(35, &primitive),
-                make_entry(64, &constant_tex),
-                make_entry(66, &image_float_tex),
-                make_entry(67, &image_rgb_tex),
                 wgpu::BindGroupEntry {
                     binding: 68,
                     resource: wgpu::BindingResource::TextureViewArray(&views_refs),
                 },
-                make_entry(69, &scale_tex),
-                make_entry(70, &mix_tex),
-                make_entry(71, &checkerboard_tex),
-                make_entry(72, &conductor_refl_tex),
                 make_entry(96, &diffuse_mat),
                 make_entry(97, &diffuse_transmit_mat),
                 make_entry(98, &conductor_mat),
@@ -394,6 +364,26 @@ impl Scene {
                 make_entry(228, &power_light_sampler_data),
             ],
         })
+    }
+
+    pub fn generated_texture_shader_code(&self) -> String {
+        let spectrum_cases = &self.spectrum_texture_match;
+        let float_cases = &self.float_texture_match;
+        format!(
+            "
+fn spectrum_texture_evaluate(id: SpectrumTextureId, uv: vec2f, wavelengths: Wavelengths) -> vec4f {{
+    switch id.id {{
+        {spectrum_cases}
+        default {{ return vec4f(); }}
+    }}
+}}
+fn float_texture_evaluate(id: FloatTextureId, uv: vec2f) -> f32 {{
+    switch id.id {{
+        {float_cases}
+        default {{ return 0; }}
+    }}
+}}"
+        )
     }
 
     pub fn add_image(&mut self, path: &Path, float: bool, no_gamma: bool) -> Option<u32> {

@@ -4,18 +4,14 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 pub fn load_shader(
-    device: &wgpu::Device,
     path: &str,
     flags: &HashMap<String, String>,
-) -> Result<wgpu::ShaderModule> {
+) -> Result<String> {
     let mut output = String::new();
 
     read_shader(&mut output, path.as_ref(), flags, &mut HashSet::new())?;
 
-    Ok(device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some(path),
-        source: wgpu::ShaderSource::Wgsl(output.into()),
-    }))
+    Ok(output)
 }
 
 fn read_shader(
