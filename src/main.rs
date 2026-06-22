@@ -73,6 +73,13 @@ fn main() -> anyhow::Result<()> {
         render_options.samples = samples;
     }
 
+    let squish = Mat4::from_scale(Vec3::new(
+        (render_options.width as f32 / render_options.height as f32).max(1.0),
+        (render_options.height as f32 / render_options.width as f32).max(1.0),
+        1.0,
+    ));
+    render_options.camera.ndc_to_camera.mul_assign(squish);
+
     if options.scene_stats {
         scene.print_stats();
     }
@@ -523,6 +530,11 @@ impl Transform {
             m: inverse.inverse(),
             m_inv: inverse,
         }
+    }
+
+    fn mul_assign(&mut self, other: Mat4) {
+        self.m = self.m * other;
+        self.m_inv = other.inverse() * self.m_inv;
     }
 }
 

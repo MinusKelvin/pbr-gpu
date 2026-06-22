@@ -178,19 +178,16 @@ impl SceneBuilder {
     }
 
     fn camera(&mut self, kind: &str, props: Props) {
-        let aspect_ratio = props
-            .get_float("frameaspectratio")
-            .unwrap_or(self.render_options.width as f64 / self.render_options.height as f64);
         let (ortho, mat) = match kind {
             "orhographic" => (
                 true,
-                DMat4::orthographic_lh(-aspect_ratio, aspect_ratio, -1.0, 1.0, 0.0, 1.0),
+                DMat4::orthographic_lh(-1.0, 1.0, -1.0, 1.0, 0.0, 1.0),
             ),
             "perspective" => (
                 false,
                 DMat4::perspective_infinite_lh(
                     props.get_float("fov").unwrap_or(90.0).to_radians(),
-                    aspect_ratio,
+                    1.0,
                     0.01,
                 ),
             ),
