@@ -123,16 +123,10 @@ fn material_evaluate(material_: MaterialId, hit: RaycastResult, wl: Wavelengths)
 
     let bump_map = material_get_bump_map(material);
     if bump_map.id != ~0u && dot(hit.tangent, hit.tangent) > 1.0e-9 {
-        let delta = 0.000005;
-        let bump_p = float_texture_evaluate(bump_map, hit.uv);
-        let bump_pu = float_texture_evaluate(bump_map, hit.uv + vec2(delta, 0));
-        let bump_pv = float_texture_evaluate(bump_map, hit.uv + vec2(0, delta));
+        let db_duv = float_texture_derivative(bump_map, hit.uv);
 
-        let db_du = (bump_pu - bump_p) / delta / length(hit.tangent);
-        let db_dv = (bump_pv - bump_p) / delta / length(hit.tangent);
-
-        tangent = normalize(tangent + db_du * hit.n);
-        var bitangent = bsdf.from_local[1] + db_dv * hit.n;
+        tangent = normalize(hit.tangent + db_duv.x * hit.n);
+        var bitangent = cross(hit.n, hit.tangent) + db_duv.y * hit.n;
         bitangent = normalize(bitangent - dot(bitangent, tangent) * tangent);
 
         bsdf.from_local = mat3x3f(
