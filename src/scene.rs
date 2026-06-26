@@ -110,6 +110,7 @@ impl Scene {
         this.add_table_spectrum(*builtin.cie_z);
         let v = this.add_table_spectrum(*builtin.d65);
         this.named_spectra.insert("stdillum-D65", v);
+        this.add_table_spectrum(TableSpectrum { data: [1.0; 471] });
         for (name, data) in &builtin.iors {
             let v = this.add_piecewise_linear_spectrum(data);
             this.named_spectra.insert(name, v);

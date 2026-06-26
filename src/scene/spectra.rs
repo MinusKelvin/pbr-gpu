@@ -21,6 +21,7 @@ enum SpectrumType {
 #[allow(unused)]
 impl SpectrumId {
     pub const D65: SpectrumId = SpectrumId(3);
+    pub const ONE: SpectrumId = SpectrumId(4);
 
     const TAG_BITS: u32 = 3;
     const TAG_SHIFT: u32 = 32 - Self::TAG_BITS;

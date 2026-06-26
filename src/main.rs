@@ -133,10 +133,28 @@ fn main() -> anyhow::Result<()> {
     let shader = shader::load_shader("entrypoint/megakernel.wgsl", &flags)?;
 
     let generated = scene.generated_texture_shader_code();
+    // println!("{generated}");
+
+    let text = shader + &generated;
+
+    // let naga_module = wgpu::naga::front::wgsl::parse_str(&text).unwrap();
+    // let mut validator = wgpu::naga::valid::Validator::new(
+    //     wgpu::naga::valid::ValidationFlags::all(),
+    //     wgpu::naga::valid::Capabilities::all(),
+    // );
+    // let info = validator.validate(&naga_module).unwrap();
+    // let result = wgpu::naga::back::spv::write_vec(
+    //     &naga_module,
+    //     &info,
+    //     &Default::default(),
+    //     Default::default(),
+    // )
+    // .unwrap();
+    // std::fs::write(format!("compiled.spv"), bytemuck::cast_slice(&result)).unwrap();
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl((shader + &generated).into()),
+        source: wgpu::ShaderSource::Wgsl(text.into()),
     });
 
     let scene_bg_layout = scene.make_bind_group_layout(&device);
@@ -361,7 +379,7 @@ fn main() -> anyhow::Result<()> {
 
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
-                (render_options.height + 3) / 4,
+                (render_options.height + 7) / 8,
                 1,
             );
         }

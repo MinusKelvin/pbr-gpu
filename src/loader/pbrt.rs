@@ -179,10 +179,7 @@ impl SceneBuilder {
 
     fn camera(&mut self, kind: &str, props: Props) {
         let (ortho, mat) = match kind {
-            "orhographic" => (
-                true,
-                DMat4::orthographic_lh(-1.0, 1.0, -1.0, 1.0, 0.0, 1.0),
-            ),
+            "orhographic" => (true, DMat4::orthographic_lh(-1.0, 1.0, -1.0, 1.0, 0.0, 1.0)),
             "perspective" => (
                 false,
                 DMat4::perspective_infinite_lh(
@@ -255,7 +252,9 @@ impl SceneBuilder {
             }
         };
 
-        let texture = self.texture_property(is_spectrum, &props, "value").unwrap();
+        let texture = self
+            .texture_property(is_spectrum, &props, "value", None)
+            .unwrap();
         self.textures.insert(name.to_owned(), texture);
     }
 
@@ -270,7 +269,7 @@ impl SceneBuilder {
         };
 
         let left = self
-            .texture_property(is_spectrum, &props, "tex")
+            .texture_property(is_spectrum, &props, "tex", None)
             .unwrap_or_else(|| match is_spectrum {
                 true => {
                     let spectrum = self.scene.add_constant_spectrum(1.0);
@@ -279,7 +278,7 @@ impl SceneBuilder {
                 false => Box::new(ConstantFloatTexture { value: 1.0 }),
             });
         let right = self
-            .texture_property(false, &props, "scale")
+            .texture_property(false, &props, "scale", None)
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
 
         let texture = Box::new(ScaleTexture { left, right });
@@ -297,7 +296,7 @@ impl SceneBuilder {
         };
 
         let tex1 = self
-            .texture_property(is_spectrum, &props, "tex1")
+            .texture_property(is_spectrum, &props, "tex1", None)
             .unwrap_or_else(|| match is_spectrum {
                 true => {
                     let spectrum = self.scene.add_constant_spectrum(0.0);
@@ -306,7 +305,7 @@ impl SceneBuilder {
                 false => Box::new(ConstantFloatTexture { value: 0.0 }),
             });
         let tex2 = self
-            .texture_property(is_spectrum, &props, "tex2")
+            .texture_property(is_spectrum, &props, "tex2", None)
             .unwrap_or_else(|| match is_spectrum {
                 true => {
                     let spectrum = self.scene.add_constant_spectrum(1.0);
@@ -315,7 +314,7 @@ impl SceneBuilder {
                 false => Box::new(ConstantFloatTexture { value: 1.0 }),
             });
         let amount = self
-            .texture_property(false, &props, "amount")
+            .texture_property(false, &props, "amount", None)
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.5 }));
 
         let texture = Box::new(MixTexture { tex1, tex2, amount });
@@ -333,7 +332,7 @@ impl SceneBuilder {
         };
 
         let even = self
-            .texture_property(is_spectrum, &props, "tex1")
+            .texture_property(is_spectrum, &props, "tex1", None)
             .unwrap_or_else(|| match is_spectrum {
                 true => {
                     let spectrum = self.scene.add_constant_spectrum(1.0);
@@ -342,7 +341,7 @@ impl SceneBuilder {
                 false => Box::new(ConstantFloatTexture { value: 1.0 }),
             });
         let odd = self
-            .texture_property(is_spectrum, &props, "tex2")
+            .texture_property(is_spectrum, &props, "tex2", None)
             .unwrap_or_else(|| match is_spectrum {
                 true => {
                     let spectrum = self.scene.add_constant_spectrum(0.0);
@@ -390,12 +389,12 @@ impl SceneBuilder {
         props: &Props,
         name: &str,
         scale: f32,
-        illum: bool,
+        illum: Option<SpectrumId>,
     ) -> Option<SpectrumId> {
         match props.type_of(name)? {
-            "rgb" if illum => Some(self.scene.add_rgb_illuminant_spectrum(
+            "rgb" if let Some(illum) = illum => Some(self.scene.add_rgb_illuminant_spectrum(
                 props.get_vec3_list(name).unwrap()[0].as_vec3() * scale,
-                SpectrumId::D65,
+                illum,
             )),
             "rgb" => {
                 if scale != 1.0 {
@@ -458,6 +457,7 @@ impl SceneBuilder {
         spectrum: bool,
         props: &Props,
         name: &str,
+        illum: Option<SpectrumId>,
     ) -> Option<Box<dyn Texture>> {
         match props.type_of(name)? {
             "texture" => Some(
@@ -474,7 +474,7 @@ impl SceneBuilder {
                     }),
             ),
             _ if spectrum => self
-                .spectrum_property(props, name, 1.0, false)
+                .spectrum_property(props, name, 1.0, illum)
                 .map(|spectrum| Box::new(ConstantSpectrumTexture { spectrum }) as _),
             "float" => Some(Box::new(ConstantFloatTexture {
                 value: props.get_float(name).unwrap() as f32,
@@ -511,7 +511,7 @@ impl SceneBuilder {
             }
             "diffuse" => {
                 let texture = self
-                    .texture_property(true, &props, "reflectance")
+                    .texture_property(true, &props, "reflectance", None)
                     .unwrap_or_else(|| {
                         let spectrum = self.scene.add_constant_spectrum(0.5);
                         Box::new(ConstantSpectrumTexture { spectrum })
@@ -519,7 +519,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let texture = self.scene.spectrum_texture_evaluator(&*texture);
                 let bump_map =
@@ -530,24 +530,24 @@ impl SceneBuilder {
             }
             "diffusetransmission" => {
                 let reflectance = self
-                    .texture_property(true, &props, "reflectance")
+                    .texture_property(true, &props, "reflectance", None)
                     .unwrap_or_else(|| {
                         let spectrum = self.scene.add_constant_spectrum(0.25);
                         Box::new(ConstantSpectrumTexture { spectrum })
                     });
                 let transmittance = self
-                    .texture_property(true, &props, "transmittance")
+                    .texture_property(true, &props, "transmittance", None)
                     .unwrap_or_else(|| {
                         let spectrum = self.scene.add_constant_spectrum(0.25);
                         Box::new(ConstantSpectrumTexture { spectrum })
                     });
                 let scale = self
-                    .texture_property(false, &props, "scale")
+                    .texture_property(false, &props, "scale", None)
                     .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let reflectance = self.scene.spectrum_texture_evaluator(&*reflectance);
                 let transmittance = self.scene.spectrum_texture_evaluator(&*transmittance);
@@ -564,7 +564,9 @@ impl SceneBuilder {
                 )
             }
             "conductor" => {
-                let refl = self.texture_property(true, &props, "reflectance");
+                let is_spectrum = props.type_of("eta") == Some("spectrum");
+
+                let refl = self.texture_property(true, &props, "reflectance", None);
 
                 let (ior_re, ior_im) = match refl {
                     Some(refl) => {
@@ -575,24 +577,25 @@ impl SceneBuilder {
                         )
                     }
                     None => (
-                        self.texture_property(true, &props, "eta")
+                        self.texture_property(true, &props, "eta", Some(SpectrumId::ONE))
                             .unwrap_or_else(|| {
                                 let spectrum = self.scene.named_spectra["metal-Cu-eta"];
                                 Box::new(ConstantSpectrumTexture { spectrum })
                             }),
-                        self.texture_property(true, &props, "k").unwrap_or_else(|| {
-                            let spectrum = self.scene.named_spectra["metal-Cu-k"];
-                            Box::new(ConstantSpectrumTexture { spectrum })
-                        }),
+                        self.texture_property(true, &props, "k", Some(SpectrumId::ONE))
+                            .unwrap_or_else(|| {
+                                let spectrum = self.scene.named_spectra["metal-Cu-k"];
+                                Box::new(ConstantSpectrumTexture { spectrum })
+                            }),
                     ),
                 };
 
-                let u_roughness = self.texture_property(false, &props, "uroughness");
-                let v_roughness = self.texture_property(false, &props, "vroughness");
+                let u_roughness = self.texture_property(false, &props, "uroughness", None);
+                let v_roughness = self.texture_property(false, &props, "vroughness", None);
                 let (u_roughness, v_roughness) =
                     u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness = self
-                            .texture_property(false, &props, "roughness")
+                            .texture_property(false, &props, "roughness", None)
                             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.0 }));
                         (roughness.clone(), roughness)
                     });
@@ -600,7 +603,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let ior_re = self.scene.spectrum_texture_evaluator(&*ior_re);
                 let ior_im = self.scene.spectrum_texture_evaluator(&*ior_im);
@@ -608,6 +611,13 @@ impl SceneBuilder {
                 let v_roughness = self.scene.float_texture_evaluator(&*v_roughness);
                 let bump_map =
                     bump_map.map(|bump_map| self.scene.float_texture_evaluator(&*bump_map));
+
+                if is_spectrum {
+                    println!("should be silver: {:?}", ior_re);
+                    println!("silver spectrum id: {:?}", self.scene.named_spectra["metal-Ag-eta"]);
+                    println!("should be silver: {:?}", ior_im);
+                    println!("silver spectrum id: {:?}", self.scene.named_spectra["metal-Ag-k"]);
+                }
 
                 self.scene.add_conductor_material(
                     ior_re,
@@ -620,15 +630,15 @@ impl SceneBuilder {
             }
             "dielectric" => {
                 let ior = self
-                    .spectrum_property(&props, "eta", 1.0, false)
+                    .spectrum_property(&props, "eta", 1.0, None)
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
 
-                let u_roughness = self.texture_property(false, &props, "uroughness");
-                let v_roughness = self.texture_property(false, &props, "vroughness");
+                let u_roughness = self.texture_property(false, &props, "uroughness", None);
+                let v_roughness = self.texture_property(false, &props, "vroughness", None);
                 let (u_roughness, v_roughness) =
                     u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness = self
-                            .texture_property(false, &props, "roughness")
+                            .texture_property(false, &props, "roughness", None)
                             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.0 }));
                         (roughness.clone(), roughness)
                     });
@@ -636,7 +646,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let u_roughness = self.scene.float_texture_evaluator(&*u_roughness);
                 let v_roughness = self.scene.float_texture_evaluator(&*v_roughness);
@@ -653,12 +663,12 @@ impl SceneBuilder {
             }
             "thindielectric" => {
                 let ior = self
-                    .spectrum_property(&props, "eta", 1.0, false)
+                    .spectrum_property(&props, "eta", 1.0, None)
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let bump_map =
                     bump_map.map(|bump_map| self.scene.float_texture_evaluator(&*bump_map));
@@ -668,22 +678,22 @@ impl SceneBuilder {
             }
             "metallicworkflow" => {
                 let base_color = self
-                    .texture_property(true, &props, "reflectance")
+                    .texture_property(true, &props, "reflectance", None)
                     .unwrap_or_else(|| {
                         let spectrum = self.scene.add_constant_spectrum(0.5);
                         Box::new(ConstantSpectrumTexture { spectrum })
                     });
 
                 let metallic = self
-                    .texture_property(false, &props, "metallic")
+                    .texture_property(false, &props, "metallic", None)
                     .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.0 }));
 
-                let u_roughness = self.texture_property(false, &props, "uroughness");
-                let v_roughness = self.texture_property(false, &props, "vroughness");
+                let u_roughness = self.texture_property(false, &props, "uroughness", None);
+                let v_roughness = self.texture_property(false, &props, "vroughness", None);
                 let (u_roughness, v_roughness) =
                     u_roughness.zip(v_roughness).unwrap_or_else(|| {
                         let roughness = self
-                            .texture_property(false, &props, "roughness")
+                            .texture_property(false, &props, "roughness", None)
                             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.0 }));
                         (roughness.clone(), roughness)
                     });
@@ -691,7 +701,7 @@ impl SceneBuilder {
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)
                 });
-                let bump_map = self.texture_property(false, &props, "displacement");
+                let bump_map = self.texture_property(false, &props, "displacement", None);
 
                 let base_color = self.scene.spectrum_texture_evaluator(&*base_color);
                 let metallic = self.scene.float_texture_evaluator(&*metallic);
@@ -724,7 +734,7 @@ impl SceneBuilder {
                 });
 
                 let amount = self
-                    .texture_property(false, &props, "amount")
+                    .texture_property(false, &props, "amount", None)
                     .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 0.5 }));
                 let amount = self.scene.float_texture_evaluator(&*amount);
 
@@ -766,7 +776,9 @@ impl SceneBuilder {
                 .scene
                 .add_image_light(self.state.transform, image, scale);
             self.lights.push(light);
-        } else if let Some(spectrum) = self.spectrum_property(&props, "L", scale, true) {
+        } else if let Some(spectrum) =
+            self.spectrum_property(&props, "L", scale, Some(SpectrumId::D65))
+        {
             let light = self.scene.add_uniform_light(spectrum);
             self.lights.push(light);
         } else {
@@ -779,7 +791,12 @@ impl SceneBuilder {
         let cos_radius = (size / 2.0).to_radians().cos();
 
         let spectrum = self
-            .spectrum_property(&props, "L", 1.0 / (2.0 * PI * (1.0 - cos_radius)), true)
+            .spectrum_property(
+                &props,
+                "L",
+                1.0 / (2.0 * PI * (1.0 - cos_radius)),
+                Some(SpectrumId::D65),
+            )
             .unwrap_or(SpectrumId::D65);
 
         let from = props.get_vec3_list("from").map_or(DVec3::ZERO, |v| v[0]);
@@ -799,7 +816,7 @@ impl SceneBuilder {
         let scale = props.get_float("scale").unwrap_or(1.0) as f32;
         let two_sided = props.get_bool("twosided").unwrap_or(false);
         self.state.area_light = self
-            .spectrum_property(&props, "L", scale, true)
+            .spectrum_property(&props, "L", scale, Some(SpectrumId::D65))
             .map(|l| (l, two_sided));
     }
 
@@ -821,7 +838,7 @@ impl SceneBuilder {
         let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
         let alpha = self
-            .texture_property(false, &props, "alpha")
+            .texture_property(false, &props, "alpha", None)
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
         let alpha = self.scene.float_texture_evaluator(&*alpha);
 
@@ -863,7 +880,7 @@ impl SceneBuilder {
         }
 
         let alpha = self
-            .texture_property(false, &props, "alpha")
+            .texture_property(false, &props, "alpha", None)
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
         let alpha = self.scene.float_texture_evaluator(&*alpha);
 
@@ -919,7 +936,7 @@ impl SceneBuilder {
         let path = self.base.join(file);
 
         let alpha = self
-            .texture_property(false, &props, "alpha")
+            .texture_property(false, &props, "alpha", None)
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
         let alpha = self.scene.float_texture_evaluator(&*alpha);
 
