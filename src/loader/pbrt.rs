@@ -114,6 +114,16 @@ impl SceneBuilder {
         self.state = self.stack.pop().unwrap();
     }
 
+    fn film(&mut self, kind: &str, props: Props) {
+        _ = kind;
+        if let Some(width) = props.get_uint_list("xresolution") {
+            self.render_options.width = width[0];
+        }
+        if let Some(height) = props.get_uint_list("yresolution") {
+            self.render_options.height = height[0];
+        }
+    }
+
     fn begin_object(&mut self, name: &str) {
         assert!(self.object_state.is_none());
         let name = name.to_owned();
@@ -564,8 +574,6 @@ impl SceneBuilder {
                 )
             }
             "conductor" => {
-                let is_spectrum = props.type_of("eta") == Some("spectrum");
-
                 let refl = self.texture_property(true, &props, "reflectance", None);
 
                 let (ior_re, ior_im) = match refl {
@@ -612,13 +620,6 @@ impl SceneBuilder {
                 let bump_map =
                     bump_map.map(|bump_map| self.scene.float_texture_evaluator(&*bump_map));
 
-                if is_spectrum {
-                    println!("should be silver: {:?}", ior_re);
-                    println!("silver spectrum id: {:?}", self.scene.named_spectra["metal-Ag-eta"]);
-                    println!("should be silver: {:?}", ior_im);
-                    println!("silver spectrum id: {:?}", self.scene.named_spectra["metal-Ag-k"]);
-                }
-
                 self.scene.add_conductor_material(
                     ior_re,
                     ior_im,
@@ -630,7 +631,7 @@ impl SceneBuilder {
             }
             "dielectric" => {
                 let ior = self
-                    .spectrum_property(&props, "eta", 1.0, None)
+                    .spectrum_property(&props, "eta", 1.0, Some(SpectrumId::ONE))
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
 
                 let u_roughness = self.texture_property(false, &props, "uroughness", None);
@@ -663,7 +664,7 @@ impl SceneBuilder {
             }
             "thindielectric" => {
                 let ior = self
-                    .spectrum_property(&props, "eta", 1.0, None)
+                    .spectrum_property(&props, "eta", 1.0, Some(SpectrumId::ONE))
                     .unwrap_or_else(|| self.scene.add_constant_spectrum(1.5));
                 let normal_map = props.get_string("normalmap").and_then(|filename| {
                     self.scene.add_image(&self.base.join(filename), false, true)

@@ -16,6 +16,8 @@ Statement: () = {
     "AttributeBegin" => builder.push(),
     "AttributeEnd" => builder.pop(),
 
+    "Film" <String> <Properties> => builder.film(<>),
+
     "ObjectBegin" <String> => builder.begin_object(<>),
     "ObjectEnd" => builder.end_object(),
     "ObjectInstance" <String> => builder.instance_object(<>),

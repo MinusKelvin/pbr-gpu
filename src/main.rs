@@ -133,7 +133,6 @@ fn main() -> anyhow::Result<()> {
     let shader = shader::load_shader("entrypoint/megakernel.wgsl", &flags)?;
 
     let generated = scene.generated_texture_shader_code();
-    // println!("{generated}");
 
     let text = shader + &generated;
 
