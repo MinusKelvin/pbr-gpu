@@ -18,6 +18,7 @@ mod options;
 mod scene;
 mod shader;
 mod spectrum;
+mod wavefront;
 
 #[derive(Parser)]
 struct Options {
@@ -45,6 +46,9 @@ struct Options {
 
     #[clap(long)]
     scene_stats: bool,
+
+    #[clap(long)]
+    wavefront: bool,
 
     scene: PathBuf,
 }
@@ -281,17 +285,32 @@ fn main() -> anyhow::Result<()> {
 
     let start = Instant::now();
 
-    let num_samples = megakernel::run(
-        &options,
-        &device,
-        &queue,
-        &scene,
-        render_options,
-        &statics_bg_layout,
-        &statics_bg,
-        &mean,
-        &variance,
-    )?;
+    let num_samples;
+    if options.wavefront {
+        num_samples = wavefront::run(
+            &options,
+            &device,
+            &queue,
+            &scene,
+            render_options,
+            &statics_bg_layout,
+            &statics_bg,
+            &mean,
+            &variance,
+        )?;
+    } else {
+        num_samples = megakernel::run(
+            &options,
+            &device,
+            &queue,
+            &scene,
+            render_options,
+            &statics_bg_layout,
+            &statics_bg,
+            &mean,
+            &variance,
+        )?;
+    }
 
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
