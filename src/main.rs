@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
 use clap::Parser;
@@ -283,11 +283,8 @@ fn main() -> anyhow::Result<()> {
         ],
     });
 
-    let start = Instant::now();
-
-    let num_samples;
-    if options.wavefront {
-        num_samples = wavefront::run(
+    let (num_samples, took) = match options.wavefront {
+        true => wavefront::run(
             &options,
             &device,
             &queue,
@@ -297,9 +294,8 @@ fn main() -> anyhow::Result<()> {
             &statics_bg,
             &mean,
             &variance,
-        )?;
-    } else {
-        num_samples = megakernel::run(
+        )?,
+        false => megakernel::run(
             &options,
             &device,
             &queue,
@@ -309,12 +305,8 @@ fn main() -> anyhow::Result<()> {
             &statics_bg,
             &mean,
             &variance,
-        )?;
-    }
-
-    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-
-    let took = start.elapsed();
+        )?,
+    };
 
     if std::env::var_os("MESA_VK_TRACE_PER_SUBMIT").is_some() {
         std::thread::sleep(Duration::from_secs(1));

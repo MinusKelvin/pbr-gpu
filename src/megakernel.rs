@@ -17,7 +17,7 @@ pub fn run(
     statics_bg: &wgpu::BindGroup,
     mean: &wgpu::Texture,
     variance: &wgpu::Texture,
-) -> anyhow::Result<u32> {
+) -> anyhow::Result<(u32, Duration)> {
     let mut extra_state = match options.integrator.as_str() {
         "guided" => Box::new(GuidedState::new(
             &device,
@@ -115,5 +115,12 @@ pub fn run(
     }
     eprintln!();
 
-    Ok(num_samples)
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: Some(last),
+            timeout: None,
+        })
+        .unwrap();
+
+    Ok((num_samples, start.elapsed()))
 }

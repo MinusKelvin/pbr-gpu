@@ -1,12 +1,10 @@
 use std::io::prelude::Write;
-use std::time::Instant;
-
-use glam::Vec3;
+use std::time::{Duration, Instant};
 
 use crate::options::RenderOptions;
 use crate::scene::Scene;
 use crate::shader::load_shader;
-use crate::{Options, storage_buffer_entry, writable_storage_buffer_entry};
+use crate::{Options, writable_storage_buffer_entry};
 
 pub fn run(
     options: &Options,
@@ -18,7 +16,7 @@ pub fn run(
     statics_bg: &wgpu::BindGroup,
     mean: &wgpu::Texture,
     variance: &wgpu::Texture,
-) -> anyhow::Result<u32> {
+) -> anyhow::Result<(u32, Duration)> {
     let flags = [
         ("sampler".to_owned(), "independent".to_owned()),
         ("camera".to_owned(), "projective".to_owned()),
@@ -158,5 +156,12 @@ pub fn run(
     }
     eprintln!();
 
-    Ok(num_samples)
+    device
+        .poll(wgpu::PollType::Wait {
+            submission_index: Some(last),
+            timeout: None,
+        })
+        .unwrap();
+
+    Ok((num_samples, start.elapsed()))
 }
