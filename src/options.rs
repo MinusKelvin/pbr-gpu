@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use glam::Mat4;
 
 use crate::{ProjectiveCamera, Transform};
@@ -7,6 +9,7 @@ pub struct RenderOptions {
     pub width: u32,
     pub height: u32,
     pub samples: u32,
+    pub time: Duration,
 }
 
 impl Default for RenderOptions {
@@ -27,6 +30,7 @@ impl Default for RenderOptions {
             width: 1280,
             height: 720,
             samples: 16,
+            time: Duration::MAX,
         }
     }
 }

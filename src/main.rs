@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,10 +11,9 @@ use rand::prelude::SliceRandom;
 use rand_pcg::Pcg64;
 use wgpu::util::DeviceExt;
 
-use crate::guided_state::GuidedState;
-
 mod guided_state;
 mod loader;
+mod megakernel;
 mod options;
 mod scene;
 mod shader;
@@ -58,7 +56,6 @@ fn main() -> anyhow::Result<()> {
 
     let (mut render_options, scene) = loader::pbrt::load_pbrt_scene(&spectrum_data, &options.scene);
 
-    let mut time_limit = Duration::MAX;
     if let Some(width) = options.width {
         render_options.width = width;
     }
@@ -67,7 +64,7 @@ fn main() -> anyhow::Result<()> {
     }
     if let Some(time) = options.time {
         render_options.samples = u32::MAX;
-        time_limit = time;
+        render_options.time = time;
     }
     if let Some(samples) = options.samples {
         render_options.samples = samples;
@@ -106,58 +103,11 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     }))?;
 
-    let mut extra_state = match options.integrator.as_str() {
-        "guided" => Box::new(GuidedState::new(
-            &device,
-            &scene,
-            options.scale,
-            render_options.samples,
-            time_limit,
-        )) as Box<dyn ExtraState>,
-        _ => Box::new(()),
-    };
-
     let sampler_data = match options.sampler.as_str() {
         "independent" => vec![0; 4],
         "roberts" => bytemuck::pod_collect_to_vec(&roberts_sampler_data()),
         s => unreachable!("invalid sampler `{s}`"),
     };
-
-    let flags = [
-        ("sampler".to_owned(), options.sampler),
-        ("camera".to_owned(), "projective".to_owned()),
-        ("integrator".to_owned(), options.integrator),
-    ]
-    .into_iter()
-    .collect();
-    let shader = shader::load_shader("entrypoint/megakernel.wgsl", &flags)?;
-
-    let generated = scene.generated_texture_shader_code();
-
-    let text = shader + &generated;
-
-    // let naga_module = wgpu::naga::front::wgsl::parse_str(&text).unwrap();
-    // let mut validator = wgpu::naga::valid::Validator::new(
-    //     wgpu::naga::valid::ValidationFlags::all(),
-    //     wgpu::naga::valid::Capabilities::all(),
-    // );
-    // let info = validator.validate(&naga_module).unwrap();
-    // let result = wgpu::naga::back::spv::write_vec(
-    //     &naga_module,
-    //     &info,
-    //     &Default::default(),
-    //     Default::default(),
-    // )
-    // .unwrap();
-    // std::fs::write(format!("compiled.spv"), bytemuck::cast_slice(&result)).unwrap();
-
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(text.into()),
-    });
-
-    let scene_bg_layout = scene.make_bind_group_layout(&device);
-    let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
     let film_desc = wgpu::TextureDescriptor {
         label: None,
@@ -329,73 +279,19 @@ fn main() -> anyhow::Result<()> {
         ],
     });
 
-    let mut bg_layouts = vec![&scene_bg_layout, &statics_bg_layout];
-    extra_state.add_bind_group_layouts(&mut bg_layouts);
-
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &bg_layouts,
-        immediate_size: 4,
-    });
-
-    drop(bg_layouts);
-
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
-
-    let mut last = queue.submit([]);
-
     let start = Instant::now();
-    let mut num_samples = 0;
 
-    for i in options.sample_offset..render_options.samples {
-        let time = start.elapsed();
-        if start.elapsed() >= time_limit {
-            break;
-        }
-
-        num_samples += 1;
-
-        extra_state.before_sample(i, time, &device, &queue, &mean, &variance);
-
-        let mut encoder = device.create_command_encoder(&Default::default());
-
-        {
-            let mut pass = encoder.begin_compute_pass(&Default::default());
-
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &scene_bg, &[]);
-            pass.set_bind_group(1, &statics_bg, &[]);
-            pass.set_immediates(0, bytemuck::bytes_of(&i));
-
-            extra_state.setup_pass(&mut pass);
-
-            pass.dispatch_workgroups(
-                (render_options.width + 7) / 8,
-                (render_options.height + 7) / 8,
-                1,
-            );
-        }
-
-        let new = queue.submit([encoder.finish()]);
-        device
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(last),
-                timeout: None,
-            })
-            .unwrap();
-
-        last = new;
-        eprint!("\r{}         ", i + 1);
-        std::io::stderr().flush().unwrap();
-    }
-    eprintln!();
+    let num_samples = megakernel::run(
+        &options,
+        &device,
+        &queue,
+        &scene,
+        render_options,
+        &statics_bg_layout,
+        &statics_bg,
+        &mean,
+        &variance,
+    )?;
 
     device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
 
