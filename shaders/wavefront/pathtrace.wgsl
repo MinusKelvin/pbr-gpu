@@ -8,10 +8,10 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    var state = RAY_STATES[id.x];
-    if state.exists == 0 {
+    if id.x >= arrayLength(&RAY_STATES) {
         return;
     }
+    var state = RAY_STATES[id.x];
     SAMPLER = state.sampler_state;
 
     state.radiance = integrate_ray(state.wavelengths, state.ray);

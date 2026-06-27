@@ -35,7 +35,6 @@ fn main(
 
     RAY_STATES[ray_id] = RayState(
         ray,
-        1,
         wavelengths,
         vec4f(),
         id.xy,

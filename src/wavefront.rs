@@ -28,7 +28,7 @@ pub fn run(
 
     let ray_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("ray state"),
-        size: rays as u64 * 128,
+        size: rays as u64 * 96,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });

@@ -9,10 +9,10 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    var state = RAY_STATES[id.x];
-    if state.exists == 0 {
+    if id.x >= arrayLength(&RAY_STATES) {
         return;
     }
+    let state = RAY_STATES[id.x];
 
     film_add_sample(
         state.px,
