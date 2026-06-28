@@ -40,4 +40,6 @@ fn main(
         id.xy,
         SAMPLER,
     );
+
+    PATH_STATES[ray_id] = PathState(vec4f(1), 0, 0, 0, 0);
 }

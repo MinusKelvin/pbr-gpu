@@ -24,7 +24,8 @@ pub fn run(
     .into_iter()
     .collect();
 
-    let rays = (render_options.width * render_options.height).next_multiple_of(32);
+    let rays = render_options.width * render_options.height;
+    let wg_size = (rays + 31) / 32;
 
     let ray_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("ray state"),
@@ -33,18 +34,34 @@ pub fn run(
         mapped_at_creation: false,
     });
 
+    let path_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("path state"),
+        size: rays as u64 * 32,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
     let state_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &[writable_storage_buffer_entry(0)],
+        entries: &[
+            writable_storage_buffer_entry(0),
+            writable_storage_buffer_entry(1),
+        ],
     });
 
     let state_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &state_bg_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: ray_state_buffer.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ray_state_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: path_state_buffer.as_entire_binding(),
+            },
+        ],
     });
 
     let scene_bg_layout = scene.make_bind_group_layout(&device);
@@ -136,10 +153,12 @@ pub fn run(
             );
 
             pass.set_pipeline(&pathtrace_pipeline);
-            pass.dispatch_workgroups(rays / 32, 1, 1);
+            for _ in 0..32 {
+                pass.dispatch_workgroups(wg_size, 1, 1);
+            }
 
             pass.set_pipeline(&add_sample_pipeline);
-            pass.dispatch_workgroups(rays / 32, 1, 1);
+            pass.dispatch_workgroups(wg_size, 1, 1);
         }
 
         let new = queue.submit([encoder.finish()]);
