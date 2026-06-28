@@ -57,8 +57,11 @@ struct SceneBounds {
 }
 
 impl ExtraState for GuidedState {
-    fn add_bind_group_layouts<'a>(&'a mut self, bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>) {
-        bg_layouts.push(&self.bg_layout);
+    fn add_bind_group_layouts<'a>(
+        &'a mut self,
+        bg_layouts: &mut Vec<Option<&'a wgpu::BindGroupLayout>>,
+    ) {
+        bg_layouts.push(Some(&self.bg_layout));
     }
 
     fn setup_pass(&mut self, pass: &mut wgpu::ComputePass) {

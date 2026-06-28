@@ -17,7 +17,7 @@ fn material_diffuse_evaluate(material: DiffuseMaterial, uv: vec2f, wl: Wavelengt
 }
 
 fn bsdf_diffuse_f(bsdf: BsdfParams, wo: vec3f, wi: vec3f) -> vec4f {
-    return vec4f(wo.z * wi.z > 0) * bsdf.v0 / PI;
+    return vec4f(f32(wo.z * wi.z > 0)) * bsdf.v0 / PI;
 }
 
 fn bsdf_diffuse_sample(bsdf: BsdfParams, wo: vec3f, random: vec3f) -> BsdfSample {

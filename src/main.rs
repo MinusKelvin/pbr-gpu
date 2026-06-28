@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
         scene.print_stats();
     }
 
-    let instance = wgpu::Instance::new(&Default::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_features: wgpu::Features::SHADER_INT64
@@ -463,7 +463,10 @@ impl Transform {
 }
 
 trait ExtraState {
-    fn add_bind_group_layouts<'a>(&'a mut self, bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>);
+    fn add_bind_group_layouts<'a>(
+        &'a mut self,
+        bg_layouts: &mut Vec<Option<&'a wgpu::BindGroupLayout>>,
+    );
     fn setup_pass(&mut self, pass: &mut wgpu::ComputePass);
     fn before_sample(
         &mut self,
@@ -477,7 +480,11 @@ trait ExtraState {
 }
 
 impl ExtraState for () {
-    fn add_bind_group_layouts<'a>(&'a mut self, _bg_layouts: &mut Vec<&'a wgpu::BindGroupLayout>) {}
+    fn add_bind_group_layouts<'a>(
+        &'a mut self,
+        _bg_layouts: &mut Vec<Option<&'a wgpu::BindGroupLayout>>,
+    ) {
+    }
     fn setup_pass(&mut self, _pass: &mut wgpu::ComputePass) {}
     fn before_sample(
         &mut self,

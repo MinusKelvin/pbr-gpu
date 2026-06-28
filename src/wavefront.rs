@@ -89,7 +89,11 @@ pub fn run(
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&scene_bg_layout, &statics_bg_layout, &state_bg_layout],
+        bind_group_layouts: &[
+            Some(&scene_bg_layout),
+            Some(&statics_bg_layout),
+            Some(&state_bg_layout),
+        ],
         immediate_size: 4,
     });
 

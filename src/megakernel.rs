@@ -47,7 +47,7 @@ pub fn run(
     let scene_bg_layout = scene.make_bind_group_layout(&device);
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
-    let mut bg_layouts = vec![&scene_bg_layout, &statics_bg_layout];
+    let mut bg_layouts = vec![Some(&scene_bg_layout), Some(&statics_bg_layout)];
     extra_state.add_bind_group_layouts(&mut bg_layouts);
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
