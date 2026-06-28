@@ -1,7 +1,7 @@
 #import /wavefront/queue.wgsl
 
 @group(4) @binding(0)
-var<storage, read_write> INDIRECT_SIZE: array<vec3u, 3>;
+var<storage, read_write> INDIRECT_SIZE: array<vec3u, 4>;
 
 @compute
 @workgroup_size(1)

@@ -43,12 +43,20 @@ pub fn run(
         mapped_at_creation: false,
     });
 
+    let shadow_ray_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("shadow ray state"),
+        size: rays as u64 * 64,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
     let state_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &[
             writable_storage_buffer_entry(0),
             writable_storage_buffer_entry(1),
             writable_storage_buffer_entry(2),
+            writable_storage_buffer_entry(3),
         ],
     });
 
@@ -67,6 +75,10 @@ pub fn run(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: surface_hit_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: shadow_ray_buffer.as_entire_binding(),
             },
         ],
     });
@@ -92,12 +104,20 @@ pub fn run(
         mapped_at_creation: false,
     });
 
+    let shadow_queue = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 4 + rays as u64 * 4,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
     let queue_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &[
             writable_storage_buffer_entry(0),
             writable_storage_buffer_entry(1),
             writable_storage_buffer_entry(2),
+            writable_storage_buffer_entry(3),
         ],
     });
 
@@ -117,12 +137,16 @@ pub fn run(
                 binding: 2,
                 resource: bounce_queue.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: shadow_queue.as_entire_binding(),
+            },
         ],
     });
 
     let indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 48,
+        size: 64,
         usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
@@ -171,11 +195,13 @@ pub fn run(
 
     let raygen = make_pipeline("raygen", device, &common_layout, &generated)?;
     let trace_ray = make_pipeline("trace_ray", device, &common_layout, &generated)?;
-    let direct_light = make_pipeline("direct_light", device, &common_layout, &generated)?;
+    let sample_light = make_pipeline("sample_light", device, &common_layout, &generated)?;
+    let shadow_ray = make_pipeline("shadow_ray", device, &common_layout, &generated)?;
     let bounce = make_pipeline("bounce", device, &common_layout, &generated)?;
     let add_sample = make_pipeline("add_sample", device, &common_layout, &generated)?;
     let prep_shading = make_pipeline("prep_shading", device, &prep_layout, "")?;
     let prep_tracing = make_pipeline("prep_tracing", device, &prep_layout, "")?;
+    let prep_shadow = make_pipeline("prep_shadow", device, &prep_layout, "")?;
 
     let mut last = queue.submit([]);
 
@@ -214,7 +240,9 @@ pub fn run(
                 1,
             );
 
-            for _ in 0..32 {
+            for i in 0..32 {
+                pass.push_debug_group(&format!("bounce {i}"));
+
                 pass.set_pipeline(&prep_tracing);
                 pass.dispatch_workgroups(1, 1, 1);
 
@@ -224,11 +252,19 @@ pub fn run(
                 pass.set_pipeline(&prep_shading);
                 pass.dispatch_workgroups(1, 1, 1);
 
-                pass.set_pipeline(&direct_light);
+                pass.set_pipeline(&sample_light);
                 pass.dispatch_workgroups_indirect(&indirect_buffer, 16);
+
+                pass.set_pipeline(&prep_shadow);
+                pass.dispatch_workgroups(1, 1, 1);
+
+                pass.set_pipeline(&shadow_ray);
+                pass.dispatch_workgroups_indirect(&indirect_buffer, 48);
 
                 pass.set_pipeline(&bounce);
                 pass.dispatch_workgroups_indirect(&indirect_buffer, 32);
+
+                pass.pop_debug_group();
             }
 
             pass.set_pipeline(&prep_tracing);

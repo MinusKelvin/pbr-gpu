@@ -58,9 +58,8 @@ fn sample_direct_light(ray_id: u32) {
     let offset = 10 * EPSILON * (1 + length(hit_p));
     let ray = Ray(hit_p + light_sample.dir * offset, light_sample.dir, RAY_STATES[ray_id].ray.time);
 
-    if scene_raycast(ray, light_sample.t_max - offset - 0.0001).hit {
-        return;
-    }
+    let t_max = light_sample.t_max - offset - 0.0001;
 
-    RAY_STATES[ray_id].radiance += contribution;
+    SHADOW_RAY_STATES[ray_id] = ShadowRayState(ray, contribution, t_max);
+    enqueue_shadow(ray_id);
 }

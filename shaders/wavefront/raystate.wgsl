@@ -6,6 +6,8 @@ var<storage, read_write> RAY_STATES: array<RayState>;
 var<storage, read_write> PATH_STATES: array<PathState>;
 @group(2) @binding(2)
 var<storage, read_write> SURFACE_HIT_STATES: array<SurfaceHitState>;
+@group(2) @binding(3)
+var<storage, read_write> SHADOW_RAY_STATES: array<ShadowRayState>;
 
 const LS_BSDF = 0;
 const LS_LIGHT = 1;
@@ -30,6 +32,12 @@ struct PathState {
 struct SurfaceHitState {
     bsdf: Bsdf,
     hit_pos: vec3f,
+}
+
+struct ShadowRayState {
+    ray: Ray,
+    contribution: vec4f,
+    t_max: f32,
 }
 
 fn mis_weight(p1: f32, p2: f32) -> f32 {
