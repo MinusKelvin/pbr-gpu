@@ -1,6 +1,8 @@
 use std::io::prelude::Write;
 use std::time::{Duration, Instant};
 
+use wgpu::{BindGroupDescriptor, BindGroupLayoutDescriptor};
+
 use crate::options::RenderOptions;
 use crate::scene::Scene;
 use crate::shader::load_shader;
@@ -118,12 +120,33 @@ pub fn run(
         ],
     });
 
+    let indirect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 48,
+        usage: wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
+    let indirect_bg_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[writable_storage_buffer_entry(0)],
+    });
+
+    let indirect_bg = device.create_bind_group(&BindGroupDescriptor {
+        label: None,
+        layout: &indirect_bg_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: indirect_buffer.as_entire_binding(),
+        }],
+    });
+
     let scene_bg_layout = scene.make_bind_group_layout(&device);
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
     let generated = scene.generated_texture_shader_code();
 
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+    let common_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
         bind_group_layouts: &[
             Some(&scene_bg_layout),
@@ -134,13 +157,25 @@ pub fn run(
         immediate_size: 4,
     });
 
-    let raygen = make_pipeline("raygen", device, &pipeline_layout, &generated)?;
-    let trace_ray = make_pipeline("trace_ray", device, &pipeline_layout, &generated)?;
-    let direct_light = make_pipeline("direct_light", device, &pipeline_layout, &generated)?;
-    let bounce = make_pipeline("bounce", device, &pipeline_layout, &generated)?;
-    let add_sample = make_pipeline("add_sample", device, &pipeline_layout, &generated)?;
-    let reset_trace_queue = make_pipeline("reset_trace_queue", device, &pipeline_layout, "")?;
-    let reset_other_queues = make_pipeline("reset_other_queues", device, &pipeline_layout, "")?;
+    let prep_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[
+            None,
+            None,
+            None,
+            Some(&queue_bg_layout),
+            Some(&indirect_bg_layout),
+        ],
+        immediate_size: 4,
+    });
+
+    let raygen = make_pipeline("raygen", device, &common_layout, &generated)?;
+    let trace_ray = make_pipeline("trace_ray", device, &common_layout, &generated)?;
+    let direct_light = make_pipeline("direct_light", device, &common_layout, &generated)?;
+    let bounce = make_pipeline("bounce", device, &common_layout, &generated)?;
+    let add_sample = make_pipeline("add_sample", device, &common_layout, &generated)?;
+    let prep_shading = make_pipeline("prep_shading", device, &prep_layout, "")?;
+    let prep_tracing = make_pipeline("prep_tracing", device, &prep_layout, "")?;
 
     let mut last = queue.submit([]);
 
@@ -166,8 +201,9 @@ pub fn run(
             pass.set_bind_group(1, statics_bg, &[]);
             pass.set_bind_group(2, &state_bg, &[]);
             pass.set_bind_group(3, &queue_bg, &[]);
+            pass.set_bind_group(4, &indirect_bg, &[]);
 
-            pass.set_pipeline(&reset_trace_queue);
+            pass.set_pipeline(&prep_shading);
             pass.dispatch_workgroups(1, 1, 1);
 
             pass.set_pipeline(&raygen);
@@ -179,27 +215,27 @@ pub fn run(
             );
 
             for _ in 0..32 {
-                pass.set_pipeline(&reset_other_queues);
+                pass.set_pipeline(&prep_tracing);
                 pass.dispatch_workgroups(1, 1, 1);
 
                 pass.set_pipeline(&trace_ray);
-                pass.dispatch_workgroups(wg_size, 1, 1);
+                pass.dispatch_workgroups_indirect(&indirect_buffer, 0);
 
-                pass.set_pipeline(&reset_trace_queue);
+                pass.set_pipeline(&prep_shading);
                 pass.dispatch_workgroups(1, 1, 1);
 
                 pass.set_pipeline(&direct_light);
-                pass.dispatch_workgroups(wg_size, 1, 1);
+                pass.dispatch_workgroups_indirect(&indirect_buffer, 16);
 
                 pass.set_pipeline(&bounce);
-                pass.dispatch_workgroups(wg_size, 1, 1);
+                pass.dispatch_workgroups_indirect(&indirect_buffer, 32);
             }
 
-            pass.set_pipeline(&reset_other_queues);
+            pass.set_pipeline(&prep_tracing);
             pass.dispatch_workgroups(1, 1, 1);
 
             pass.set_pipeline(&trace_ray);
-            pass.dispatch_workgroups(wg_size, 1, 1);
+            pass.dispatch_workgroups_indirect(&indirect_buffer, 0);
 
             pass.set_pipeline(&add_sample);
             pass.dispatch_workgroups(

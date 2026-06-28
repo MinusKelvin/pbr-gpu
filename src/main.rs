@@ -102,6 +102,7 @@ fn main() -> anyhow::Result<()> {
             max_buffer_size: (2 << 30) - 4,
             max_storage_buffers_per_shader_stage: 128,
             max_binding_array_elements_per_shader_stage: 4096,
+            max_bind_groups: 8,
             ..wgpu::Limits::default().using_resolution(adapter.limits())
         },
         ..Default::default()
