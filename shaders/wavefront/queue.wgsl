@@ -1,19 +1,26 @@
 @group(3) @binding(0)
-var<storage, read> ACTIVE_RAYS: QueueRead;
+var<storage, read_write> Q_TRACE_RAYS: Queue;
 @group(3) @binding(1)
-var<storage, read_write> ACTIVE_RAYS_NEXT: Queue;
+var<storage, read_write> Q_DIRECT_LIGHT: Queue;
+@group(3) @binding(2)
+var<storage, read_write> Q_BOUNCE: Queue;
 
 struct Queue {
     count: atomic<u32>,
     ray_ids: array<u32>,
 }
 
-struct QueueRead {
-    count: u32,
-    ray_ids: array<u32>,
+fn enqueue_trace(ray_id: u32) {
+    let idx = atomicAdd(&Q_TRACE_RAYS.count, 1);
+    Q_TRACE_RAYS.ray_ids[idx] = ray_id;
 }
 
-fn enqueue_ray(ray_id: u32) {
-    let idx = atomicAdd(&ACTIVE_RAYS_NEXT.count, 1);
-    ACTIVE_RAYS_NEXT.ray_ids[idx] = ray_id;
+fn enqueue_direct_light(ray_id: u32) {
+    let idx = atomicAdd(&Q_DIRECT_LIGHT.count, 1);
+    Q_DIRECT_LIGHT.ray_ids[idx] = ray_id;
+}
+
+fn enqueue_bounce(ray_id: u32) {
+    let idx = atomicAdd(&Q_BOUNCE.count, 1);
+    Q_BOUNCE.ray_ids[idx] = ray_id;
 }

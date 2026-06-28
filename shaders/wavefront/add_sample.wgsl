@@ -1,8 +1,8 @@
 #import /scene.wgsl
 #import /sampler/independent.wgsl
-#import /integrator/simple.wgsl
 #import /wavefront/raystate.wgsl
 #import /film.wgsl
+#import /light_sampler.wgsl
 
 @compute
 @workgroup_size(32)

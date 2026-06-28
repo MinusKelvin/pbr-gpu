@@ -13,31 +13,22 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    if id.x >= ACTIVE_RAYS.count {
+    if id.x >= Q_DIRECT_LIGHT.count {
         return;
     }
-    let ray_id = ACTIVE_RAYS.ray_ids[id.x];
+    let ray_id = Q_DIRECT_LIGHT.ray_ids[id.x];
 
-    SAMPLER = DIRECT_LIGHT_STATES[ray_id].sampler_state;
+    SAMPLER = RAY_STATES[ray_id].sampler_state;
     sample_direct_light(ray_id);
-    DIRECT_LIGHT_STATES[ray_id].throughput = vec4f();
+    RAY_STATES[ray_id].sampler_state = SAMPLER;
 }
 
-const LS_BSDF = 0;
-const LS_LIGHT = 1;
-const LS_MIS = 2;
-const LS_MODE = LS_MIS;
-
 fn sample_direct_light(ray_id: u32) {
-    let bsdf = DIRECT_LIGHT_STATES[ray_id].bsdf;
-    let hit_p = DIRECT_LIGHT_STATES[ray_id].hit_pos;
-    let outgoing = DIRECT_LIGHT_STATES[ray_id].outgoing;
-    let throughput = DIRECT_LIGHT_STATES[ray_id].throughput;
+    let bsdf = SURFACE_HIT_STATES[ray_id].bsdf;
+    let hit_p = SURFACE_HIT_STATES[ray_id].hit_pos;
+    let outgoing = RAY_STATES[ray_id].ray.d;
+    let throughput = PATH_STATES[ray_id].throughput;
     let wl = RAY_STATES[ray_id].wavelengths;
-
-    if all(throughput == vec4f()) {
-        return;
-    }
 
     let light_id_sample = light_sampler_sample(ROOT_LS, hit_p, sample_1d());
     if light_id_sample.pmf == 0 {
@@ -72,8 +63,4 @@ fn sample_direct_light(ray_id: u32) {
     }
 
     RAY_STATES[ray_id].radiance += contribution;
-}
-
-fn mis_weight(p1: f32, p2: f32) -> f32 {
-    return p1 / (p1 + p2);
 }

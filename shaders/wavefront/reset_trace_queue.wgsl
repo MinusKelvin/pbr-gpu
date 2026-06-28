@@ -3,5 +3,5 @@
 @compute
 @workgroup_size(1)
 fn main() {
-    atomicStore(&ACTIVE_RAYS_NEXT.count, 0);
+    atomicStore(&Q_TRACE_RAYS.count, 0);
 }

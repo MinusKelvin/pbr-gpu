@@ -44,5 +44,5 @@ fn main(
 
     PATH_STATES[ray_id] = PathState(vec4f(1), 0, 0, 0, 0);
 
-    enqueue_ray(ray_id);
+    enqueue_trace(ray_id);
 }

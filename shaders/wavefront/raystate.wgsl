@@ -5,7 +5,12 @@ var<storage, read_write> RAY_STATES: array<RayState>;
 @group(2) @binding(1)
 var<storage, read_write> PATH_STATES: array<PathState>;
 @group(2) @binding(2)
-var<storage, read_write> DIRECT_LIGHT_STATES: array<DirectLightState>;
+var<storage, read_write> SURFACE_HIT_STATES: array<SurfaceHitState>;
+
+const LS_BSDF = 0;
+const LS_LIGHT = 1;
+const LS_MIS = 2;
+const LS_MODE = LS_MIS;
 
 struct RayState {
     ray: Ray,
@@ -23,10 +28,11 @@ struct PathState {
     secondary_terminated: u32,
 }
 
-struct DirectLightState {
+struct SurfaceHitState {
     bsdf: Bsdf,
-    throughput: vec4f,
     hit_pos: vec3f,
-    outgoing: vec3f,
-    sampler_state: SamplerState,
+}
+
+fn mis_weight(p1: f32, p2: f32) -> f32 {
+    return p1 / (p1 + p2);
 }

@@ -17,13 +17,6 @@ pub fn run(
     mean: &wgpu::Texture,
     variance: &wgpu::Texture,
 ) -> anyhow::Result<(u32, Duration)> {
-    let flags = [
-        ("sampler".to_owned(), "independent".to_owned()),
-        ("camera".to_owned(), "projective".to_owned()),
-    ]
-    .into_iter()
-    .collect();
-
     let rays = render_options.width * render_options.height;
     let wg_size = (rays + 31) / 32;
 
@@ -41,9 +34,9 @@ pub fn run(
         mapped_at_creation: false,
     });
 
-    let direct_light_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("direct light state"),
-        size: rays as u64 * 176,
+    let surface_hit_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("surface hit state"),
+        size: rays as u64 * 128,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
@@ -71,20 +64,27 @@ pub fn run(
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: direct_light_state_buffer.as_entire_binding(),
+                resource: surface_hit_buffer.as_entire_binding(),
             },
         ],
     });
 
-    let queue_a = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("queue A"),
+    let trace_queue = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
         size: 4 + rays as u64 * 4,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
 
-    let queue_b = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("queue A"),
+    let direct_light_queue = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 4 + rays as u64 * 4,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
+    let bounce_queue = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
         size: 4 + rays as u64 * 4,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
@@ -92,35 +92,28 @@ pub fn run(
 
     let queue_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &[storage_buffer_entry(0), writable_storage_buffer_entry(1)],
-    });
-
-    let mut queue_bg_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &queue_bg_layout,
         entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: queue_a.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: queue_b.as_entire_binding(),
-            },
+            writable_storage_buffer_entry(0),
+            writable_storage_buffer_entry(1),
+            writable_storage_buffer_entry(2),
         ],
     });
 
-    let mut queue_bg_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let queue_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &queue_bg_layout,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: queue_b.as_entire_binding(),
+                resource: trace_queue.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: queue_a.as_entire_binding(),
+                resource: direct_light_queue.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: bounce_queue.as_entire_binding(),
             },
         ],
     });
@@ -129,12 +122,6 @@ pub fn run(
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
     let generated = scene.generated_texture_shader_code();
-
-    let raygen_shader = load_shader("wavefront/raygen.wgsl", &flags)? + &generated;
-    let raygen_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(raygen_shader.into()),
-    });
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
@@ -147,74 +134,13 @@ pub fn run(
         immediate_size: 4,
     });
 
-    let raygen_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("raygen"),
-        layout: Some(&pipeline_layout),
-        module: &raygen_shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
-
-    let pathtrace_shader = load_shader("wavefront/pathtrace.wgsl", &flags)? + &generated;
-    let pathtrace_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(pathtrace_shader.into()),
-    });
-
-    let pathtrace_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("pathtrace"),
-        layout: Some(&pipeline_layout),
-        module: &pathtrace_shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
-
-    let direct_light_shader = load_shader("wavefront/direct_light.wgsl", &flags)? + &generated;
-    let direct_light_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(direct_light_shader.into()),
-    });
-
-    let direct_light_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("direct_light"),
-        layout: Some(&pipeline_layout),
-        module: &direct_light_shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
-
-    let add_sample_shader = load_shader("wavefront/add_sample.wgsl", &flags)? + &generated;
-    let add_sample_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(add_sample_shader.into()),
-    });
-
-    let add_sample_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("add sample"),
-        layout: Some(&pipeline_layout),
-        module: &add_sample_shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
-
-    let reset_queue_shader = load_shader("wavefront/reset_queue.wgsl", &flags)?;
-    let reset_queue_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(reset_queue_shader.into()),
-    });
-
-    let reset_queue_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("reset_queue"),
-        layout: Some(&pipeline_layout),
-        module: &reset_queue_shader,
-        entry_point: None,
-        compilation_options: Default::default(),
-        cache: None,
-    });
+    let raygen = make_pipeline("raygen", device, &pipeline_layout, &generated)?;
+    let trace_ray = make_pipeline("trace_ray", device, &pipeline_layout, &generated)?;
+    let direct_light = make_pipeline("direct_light", device, &pipeline_layout, &generated)?;
+    let bounce = make_pipeline("bounce", device, &pipeline_layout, &generated)?;
+    let add_sample = make_pipeline("add_sample", device, &pipeline_layout, &generated)?;
+    let reset_trace_queue = make_pipeline("reset_trace_queue", device, &pipeline_layout, "")?;
+    let reset_other_queues = make_pipeline("reset_other_queues", device, &pipeline_layout, "")?;
 
     let mut last = queue.submit([]);
 
@@ -239,13 +165,12 @@ pub fn run(
             pass.set_bind_group(0, &scene_bg, &[]);
             pass.set_bind_group(1, statics_bg, &[]);
             pass.set_bind_group(2, &state_bg, &[]);
+            pass.set_bind_group(3, &queue_bg, &[]);
 
-            pass.set_bind_group(3, &queue_bg_a, &[]);
-            pass.set_pipeline(&reset_queue_pipeline);
+            pass.set_pipeline(&reset_trace_queue);
             pass.dispatch_workgroups(1, 1, 1);
-            std::mem::swap(&mut queue_bg_a, &mut queue_bg_b);
 
-            pass.set_pipeline(&raygen_pipeline);
+            pass.set_pipeline(&raygen);
             pass.set_immediates(0, bytemuck::bytes_of(&i));
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
@@ -254,20 +179,29 @@ pub fn run(
             );
 
             for _ in 0..32 {
-                pass.set_bind_group(3, &queue_bg_a, &[]);
-                pass.set_pipeline(&reset_queue_pipeline);
+                pass.set_pipeline(&reset_other_queues);
                 pass.dispatch_workgroups(1, 1, 1);
-                std::mem::swap(&mut queue_bg_a, &mut queue_bg_b);
 
-                pass.set_pipeline(&pathtrace_pipeline);
+                pass.set_pipeline(&trace_ray);
                 pass.dispatch_workgroups(wg_size, 1, 1);
 
-                pass.set_bind_group(3, &queue_bg_a, &[]);
-                pass.set_pipeline(&direct_light_pipeline);
+                pass.set_pipeline(&reset_trace_queue);
+                pass.dispatch_workgroups(1, 1, 1);
+
+                pass.set_pipeline(&direct_light);
+                pass.dispatch_workgroups(wg_size, 1, 1);
+
+                pass.set_pipeline(&bounce);
                 pass.dispatch_workgroups(wg_size, 1, 1);
             }
 
-            pass.set_pipeline(&add_sample_pipeline);
+            pass.set_pipeline(&reset_other_queues);
+            pass.dispatch_workgroups(1, 1, 1);
+
+            pass.set_pipeline(&trace_ray);
+            pass.dispatch_workgroups(wg_size, 1, 1);
+
+            pass.set_pipeline(&add_sample);
             pass.dispatch_workgroups(wg_size, 1, 1);
         }
 
@@ -293,4 +227,35 @@ pub fn run(
         .unwrap();
 
     Ok((num_samples, start.elapsed()))
+}
+
+fn make_pipeline(
+    name: &str,
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    generated: &str,
+) -> anyhow::Result<wgpu::ComputePipeline> {
+    let flags = [
+        ("sampler".to_owned(), "independent".to_owned()),
+        ("camera".to_owned(), "projective".to_owned()),
+    ]
+    .into_iter()
+    .collect();
+
+    let shader = load_shader(&format!("wavefront/{name}.wgsl"), &flags)? + generated;
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some(name),
+        source: wgpu::ShaderSource::Wgsl(shader.into()),
+    });
+
+    Ok(
+        device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some(name),
+            layout: Some(&layout),
+            module: &shader,
+            entry_point: None,
+            compilation_options: Default::default(),
+            cache: None,
+        }),
+    )
 }

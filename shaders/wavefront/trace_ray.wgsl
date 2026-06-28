@@ -13,36 +13,26 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    if id.x >= ACTIVE_RAYS.count {
+    if id.x >= Q_TRACE_RAYS.count {
         return;
     }
-    let ray_id = ACTIVE_RAYS.ray_ids[id.x];
+    let ray_id = Q_TRACE_RAYS.ray_ids[id.x];
 
     SAMPLER = RAY_STATES[ray_id].sampler_state;
 
-    integrate_ray(ray_id);
+    trace_ray(ray_id);
 
     RAY_STATES[ray_id].sampler_state = SAMPLER;
 }
 
-const MAX_DEPTH = 31;
-const LS_BSDF = 0;
-const LS_LIGHT = 1;
-const LS_MIS = 2;
-const LS_MODE = LS_MIS;
-
-fn integrate_ray(ray_id: u32) {
-    var throughput = PATH_STATES[ray_id].throughput;
-    if all(throughput == vec4f()) {
-        return;
-    }
-
-    var ray = RAY_STATES[ray_id].ray;
+fn trace_ray(ray_id: u32) {
+    let ray = RAY_STATES[ray_id].ray;
     let wl = RAY_STATES[ray_id].wavelengths;
 
-    var specular_bounce = PATH_STATES[ray_id].specular_bounce != 0;
+    var throughput = PATH_STATES[ray_id].throughput;
+    let specular_bounce = PATH_STATES[ray_id].specular_bounce != 0;
     var secondary_terminated = PATH_STATES[ray_id].secondary_terminated != 0;
-    var bsdf_pdf = PATH_STATES[ray_id].bsdf_pdf;
+    let bsdf_pdf = PATH_STATES[ray_id].bsdf_pdf;
     var depth = PATH_STATES[ray_id].depth;
 
     let result = scene_raycast(ray, FLOAT_MAX);
@@ -64,7 +54,6 @@ fn integrate_ray(ray_id: u32) {
                     * mis_weight(bsdf_pdf, ls_pdf);
             }
         }
-        PATH_STATES[ray_id].throughput = vec4f();
         return;
     }
 
@@ -81,13 +70,6 @@ fn integrate_ray(ray_id: u32) {
             * mis_weight(bsdf_pdf, ls_pdf);
     }
 
-    // enforce termination
-    depth += 1;
-    if depth > MAX_DEPTH {
-        PATH_STATES[ray_id].throughput = vec4f();
-        return;
-    }
-
     let bsdf = material_evaluate(result.material, result, wl);
 
     if !secondary_terminated && bsdf_terminates_secondary_wavelengths(bsdf) {
@@ -95,49 +77,17 @@ fn integrate_ray(ray_id: u32) {
         throughput *= vec4f(4, 0, 0, 0);
     }
 
-    enqueue_ray(ray_id);
+    PATH_STATES[ray_id].throughput = throughput;
+    PATH_STATES[ray_id].depth = depth + 1;
+    PATH_STATES[ray_id].secondary_terminated = u32(secondary_terminated);
+    SURFACE_HIT_STATES[ray_id] = SurfaceHitState(bsdf, result.p);
 
+    enqueue_bounce(ray_id);
     if LS_MODE != LS_BSDF {
-        // sample direct lighting
-        DIRECT_LIGHT_STATES[ray_id] = DirectLightState(bsdf, throughput, result.p, ray.d, SAMPLER);
+        enqueue_direct_light(ray_id);
+    } else {
+        // consume sampler dimensions which are used by direct light sampling
+        sample_2d();
+        sample_1d();
     }
-    // consume sampler dimensions which are used by direct light sampling
-    sample_2d();
-    sample_1d();
-
-    // sample bsdf
-    let bsdf_s = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
-    if bsdf_s.pdf == 0 {
-        PATH_STATES[ray_id].throughput = vec4f();
-        return;
-    }
-
-    bsdf_pdf = bsdf_s.pdf;
-
-    throughput *= bsdf_s.f * abs(dot(bsdf_normal(bsdf), bsdf_s.dir)) / bsdf_s.pdf;
-
-    // russian roulette
-    let rr = max(max(throughput.x, throughput.y), max(throughput.z, throughput.w));
-    if rr < 1 && depth > 1 {
-        if sample_1d() > rr {
-            PATH_STATES[ray_id].throughput = vec4f();
-            return;
-        }
-        throughput /= rr;
-    }
-
-    // spawn new ray
-    let offset = 10 * EPSILON * (1 + length(result.p));
-    ray.d = bsdf_s.dir;
-    ray.o = result.p + ray.d * offset;
-    specular_bounce = bsdf_s.specular;
-
-    RAY_STATES[ray_id].ray = ray;
-    PATH_STATES[ray_id] = PathState(
-        throughput, depth, bsdf_pdf, u32(specular_bounce), u32(secondary_terminated)
-    );
-}
-
-fn mis_weight(p1: f32, p2: f32) -> f32 {
-    return p1 / (p1 + p2);
 }
