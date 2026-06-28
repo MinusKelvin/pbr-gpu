@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::options::RenderOptions;
 use crate::scene::Scene;
 use crate::shader::load_shader;
-use crate::{Options, writable_storage_buffer_entry};
+use crate::{Options, storage_buffer_entry, writable_storage_buffer_entry};
 
 pub fn run(
     options: &Options,
@@ -76,6 +76,55 @@ pub fn run(
         ],
     });
 
+    let queue_a = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("queue A"),
+        size: 4 + rays as u64 * 4,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
+    let queue_b = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("queue A"),
+        size: 4 + rays as u64 * 4,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
+    let queue_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[storage_buffer_entry(0), writable_storage_buffer_entry(1)],
+    });
+
+    let mut queue_bg_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &queue_bg_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: queue_a.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: queue_b.as_entire_binding(),
+            },
+        ],
+    });
+
+    let mut queue_bg_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &queue_bg_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: queue_b.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: queue_a.as_entire_binding(),
+            },
+        ],
+    });
+
     let scene_bg_layout = scene.make_bind_group_layout(&device);
     let scene_bg = scene.make_bind_group(&device, &queue, &scene_bg_layout);
 
@@ -93,6 +142,7 @@ pub fn run(
             Some(&scene_bg_layout),
             Some(&statics_bg_layout),
             Some(&state_bg_layout),
+            Some(&queue_bg_layout),
         ],
         immediate_size: 4,
     });
@@ -151,6 +201,21 @@ pub fn run(
         cache: None,
     });
 
+    let reset_queue_shader = load_shader("wavefront/reset_queue.wgsl", &flags)?;
+    let reset_queue_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(reset_queue_shader.into()),
+    });
+
+    let reset_queue_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("reset_queue"),
+        layout: Some(&pipeline_layout),
+        module: &reset_queue_shader,
+        entry_point: None,
+        compilation_options: Default::default(),
+        cache: None,
+    });
+
     let mut last = queue.submit([]);
 
     let start = Instant::now();
@@ -175,6 +240,11 @@ pub fn run(
             pass.set_bind_group(1, statics_bg, &[]);
             pass.set_bind_group(2, &state_bg, &[]);
 
+            pass.set_bind_group(3, &queue_bg_a, &[]);
+            pass.set_pipeline(&reset_queue_pipeline);
+            pass.dispatch_workgroups(1, 1, 1);
+            std::mem::swap(&mut queue_bg_a, &mut queue_bg_b);
+
             pass.set_pipeline(&raygen_pipeline);
             pass.set_immediates(0, bytemuck::bytes_of(&i));
             pass.dispatch_workgroups(
@@ -184,8 +254,15 @@ pub fn run(
             );
 
             for _ in 0..32 {
+                pass.set_bind_group(3, &queue_bg_a, &[]);
+                pass.set_pipeline(&reset_queue_pipeline);
+                pass.dispatch_workgroups(1, 1, 1);
+                std::mem::swap(&mut queue_bg_a, &mut queue_bg_b);
+
                 pass.set_pipeline(&pathtrace_pipeline);
                 pass.dispatch_workgroups(wg_size, 1, 1);
+
+                pass.set_bind_group(3, &queue_bg_a, &[]);
                 pass.set_pipeline(&direct_light_pipeline);
                 pass.dispatch_workgroups(wg_size, 1, 1);
             }

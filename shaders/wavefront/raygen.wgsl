@@ -3,6 +3,7 @@
 #import /film.wgsl
 #import /filter.wgsl
 #import /wavefront/raystate.wgsl
+#import /wavefront/queue.wgsl
 #import /light_sampler.wgsl
 #import /scene.wgsl
 
@@ -42,4 +43,6 @@ fn main(
     );
 
     PATH_STATES[ray_id] = PathState(vec4f(1), 0, 0, 0, 0);
+
+    enqueue_ray(ray_id);
 }

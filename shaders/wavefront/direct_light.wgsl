@@ -1,6 +1,7 @@
 #import /scene.wgsl
 #import /sampler/independent.wgsl
 #import /wavefront/raystate.wgsl
+#import /wavefront/queue.wgsl
 #import /ray.wgsl
 #import /util/misc.wgsl
 #import /material.wgsl
@@ -12,12 +13,14 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    if id.x >= arrayLength(&RAY_STATES) {
+    if id.x >= ACTIVE_RAYS.count {
         return;
     }
-    SAMPLER = DIRECT_LIGHT_STATES[id.x].sampler_state;
-    sample_direct_light(id.x);
-    DIRECT_LIGHT_STATES[id.x].throughput = vec4f();
+    let ray_id = ACTIVE_RAYS.ray_ids[id.x];
+
+    SAMPLER = DIRECT_LIGHT_STATES[ray_id].sampler_state;
+    sample_direct_light(ray_id);
+    DIRECT_LIGHT_STATES[ray_id].throughput = vec4f();
 }
 
 const LS_BSDF = 0;

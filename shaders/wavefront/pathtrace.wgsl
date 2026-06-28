@@ -1,6 +1,7 @@
 #import /scene.wgsl
 #import /sampler/independent.wgsl
 #import /wavefront/raystate.wgsl
+#import /wavefront/queue.wgsl
 #import /ray.wgsl
 #import /util/misc.wgsl
 #import /material.wgsl
@@ -12,14 +13,16 @@
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    if id.x >= arrayLength(&RAY_STATES) {
+    if id.x >= ACTIVE_RAYS.count {
         return;
     }
-    SAMPLER = RAY_STATES[id.x].sampler_state;
+    let ray_id = ACTIVE_RAYS.ray_ids[id.x];
 
-    integrate_ray(id.x);
+    SAMPLER = RAY_STATES[ray_id].sampler_state;
 
-    RAY_STATES[id.x].sampler_state = SAMPLER;
+    integrate_ray(ray_id);
+
+    RAY_STATES[ray_id].sampler_state = SAMPLER;
 }
 
 const MAX_DEPTH = 31;
@@ -91,6 +94,8 @@ fn integrate_ray(ray_id: u32) {
         secondary_terminated = true;
         throughput *= vec4f(4, 0, 0, 0);
     }
+
+    enqueue_ray(ray_id);
 
     if LS_MODE != LS_BSDF {
         // sample direct lighting
