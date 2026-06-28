@@ -41,11 +41,19 @@ pub fn run(
         mapped_at_creation: false,
     });
 
+    let direct_light_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("direct light state"),
+        size: rays as u64 * 176,
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+
     let state_bg_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &[
             writable_storage_buffer_entry(0),
             writable_storage_buffer_entry(1),
+            writable_storage_buffer_entry(2),
         ],
     });
 
@@ -60,6 +68,10 @@ pub fn run(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: path_state_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: direct_light_state_buffer.as_entire_binding(),
             },
         ],
     });
@@ -100,6 +112,21 @@ pub fn run(
         label: Some("pathtrace"),
         layout: Some(&pipeline_layout),
         module: &pathtrace_shader,
+        entry_point: None,
+        compilation_options: Default::default(),
+        cache: None,
+    });
+
+    let direct_light_shader = load_shader("wavefront/direct_light.wgsl", &flags)? + &generated;
+    let direct_light_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(direct_light_shader.into()),
+    });
+
+    let direct_light_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("direct_light"),
+        layout: Some(&pipeline_layout),
+        module: &direct_light_shader,
         entry_point: None,
         compilation_options: Default::default(),
         cache: None,
@@ -152,8 +179,10 @@ pub fn run(
                 1,
             );
 
-            pass.set_pipeline(&pathtrace_pipeline);
             for _ in 0..32 {
+                pass.set_pipeline(&pathtrace_pipeline);
+                pass.dispatch_workgroups(wg_size, 1, 1);
+                pass.set_pipeline(&direct_light_pipeline);
                 pass.dispatch_workgroups(wg_size, 1, 1);
             }
 

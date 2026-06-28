@@ -94,17 +94,11 @@ fn integrate_ray(ray_id: u32) {
 
     if LS_MODE != LS_BSDF {
         // sample direct lighting
-        RAY_STATES[ray_id].radiance += throughput * _sample_direct_light(
-            bsdf,
-            result,
-            ray,
-            wl,
-        );
-    } else {
-        // consume sampler dimensions which would be used by direct light sampling
-        sample_2d();
-        sample_1d();
+        DIRECT_LIGHT_STATES[ray_id] = DirectLightState(bsdf, throughput, result.p, ray.d, SAMPLER);
     }
+    // consume sampler dimensions which are used by direct light sampling
+    sample_2d();
+    sample_1d();
 
     // sample bsdf
     let bsdf_s = bsdf_sample(bsdf, -ray.d, vec3f(sample_2d(), sample_1d()));
@@ -137,48 +131,6 @@ fn integrate_ray(ray_id: u32) {
     PATH_STATES[ray_id] = PathState(
         throughput, depth, bsdf_pdf, u32(specular_bounce), u32(secondary_terminated)
     );
-}
-
-fn _sample_direct_light(
-    bsdf: Bsdf,
-    hit: RaycastResult,
-    ray_: Ray,
-    wl: Wavelengths,
-) -> vec4f {
-    let light_id_sample = light_sampler_sample(ROOT_LS, hit.p, sample_1d());
-    if light_id_sample.pmf == 0 {
-        return vec4f();
-    }
-
-    let light_sample = light_sample(light_id_sample.light, hit.p, wl, sample_2d());
-    if light_sample.pdf_wrt_solid_angle == 0 {
-        return vec4f();
-    }
-
-    let pdf = light_sample.pdf_wrt_solid_angle * light_id_sample.pmf;
-
-    let bsdf_pdf = bsdf_pdf(bsdf, -ray_.d, light_sample.dir)
-        * f32(LS_MODE == LS_MIS);
-    let contribution = light_sample.emission
-        * bsdf_f(bsdf, -ray_.d, light_sample.dir)
-        * abs(dot(bsdf_normal(bsdf), light_sample.dir))
-        / pdf
-        * mis_weight(pdf, bsdf_pdf);
-
-    if all(contribution == vec4f()) {
-        return vec4f();
-    }
-
-    var ray = ray_;
-    let offset = 10 * EPSILON * (1 + length(hit.p));
-    ray.d = light_sample.dir;
-    ray.o = hit.p + ray.d * offset;
-
-    if scene_raycast(ray, light_sample.t_max - offset - 0.0001).hit {
-        return vec4f();
-    }
-
-    return contribution;
 }
 
 fn mis_weight(p1: f32, p2: f32) -> f32 {
