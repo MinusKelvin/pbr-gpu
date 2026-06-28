@@ -22,7 +22,7 @@ pub fn run(
 
     let ray_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("ray state"),
-        size: rays as u64 * 96,
+        size: rays as u64 * 80,
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
@@ -174,7 +174,7 @@ pub fn run(
             pass.set_immediates(0, bytemuck::bytes_of(&i));
             pass.dispatch_workgroups(
                 (render_options.width + 7) / 8,
-                (render_options.height + 3) / 4,
+                (render_options.height + 7) / 8,
                 1,
             );
 
@@ -202,7 +202,11 @@ pub fn run(
             pass.dispatch_workgroups(wg_size, 1, 1);
 
             pass.set_pipeline(&add_sample);
-            pass.dispatch_workgroups(wg_size, 1, 1);
+            pass.dispatch_workgroups(
+                (render_options.width + 7) / 8,
+                (render_options.height + 7) / 8,
+                1,
+            );
         }
 
         let new = queue.submit([encoder.finish()]);

@@ -16,7 +16,6 @@ struct RayState {
     ray: Ray,
     wavelengths: Wavelengths,
     radiance: vec4f,
-    px: vec2u,
     sampler_state: SamplerState,
 }
 

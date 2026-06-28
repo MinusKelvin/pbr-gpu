@@ -14,7 +14,7 @@ struct Immediates {
 var<immediate> imm: Immediates;
 
 @compute
-@workgroup_size(8, 4)
+@workgroup_size(8, 8)
 fn main(
     @builtin(global_invocation_id) id: vec3<u32>
 ) {
@@ -38,7 +38,6 @@ fn main(
         ray,
         wavelengths,
         vec4f(),
-        id.xy,
         SAMPLER,
     );
 

@@ -5,18 +5,17 @@
 #import /light_sampler.wgsl
 
 @compute
-@workgroup_size(32)
+@workgroup_size(8, 8)
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {
-    if id.x >= arrayLength(&RAY_STATES) {
+    let size = film_size();
+    if any(id.xy >= film_size()) {
         return;
     }
-    let state = RAY_STATES[id.x];
+    let ray_id = id.x + id.y * size.x;
 
-    film_add_sample(
-        state.px,
-        state.wavelengths,
-        state.radiance / film_wavelengths_pdf(state.wavelengths)
-    );
+    let wl = RAY_STATES[ray_id].wavelengths;
+
+    film_add_sample(id.xy, wl, RAY_STATES[ray_id].radiance / film_wavelengths_pdf(wl));
 }
