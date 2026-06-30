@@ -336,8 +336,8 @@ impl Scene {
             .iter_mut()
             .zip(&self.instances)
         {
-            assert_eq!(tform.m.row(3), Vec4::W);
-            let tform = tform.m.transpose().to_cols_array()[..12]
+            assert_eq!(tform.m_inv.row(3), Vec4::W);
+            let tform = tform.m_inv.transpose().to_cols_array()[..12]
                 .try_into()
                 .unwrap();
             *tlas_instance = Some(wgpu::TlasInstance::new(
