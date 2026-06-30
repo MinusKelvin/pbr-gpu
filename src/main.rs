@@ -87,26 +87,32 @@ fn main() -> anyhow::Result<()> {
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        required_features: wgpu::Features::SHADER_INT64
-            | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-            | wgpu::Features::TEXTURE_BINDING_ARRAY
-            | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
-            | wgpu::Features::FLOAT32_FILTERABLE
-            | wgpu::Features::SHADER_FLOAT32_ATOMIC
-            | wgpu::Features::CLEAR_TEXTURE
-            | wgpu::Features::IMMEDIATES,
-        required_limits: wgpu::Limits {
-            max_immediate_size: 64,
-            max_storage_buffer_binding_size: (2 << 30) - 4,
-            max_buffer_size: (2 << 30) - 4,
-            max_storage_buffers_per_shader_stage: 128,
-            max_binding_array_elements_per_shader_stage: 4096,
-            max_bind_groups: 8,
-            ..wgpu::Limits::default().using_resolution(adapter.limits())
-        },
-        ..Default::default()
-    }))?;
+    let (device, queue) = pollster::block_on(
+        adapter.request_device(&wgpu::DeviceDescriptor {
+            required_features: wgpu::Features::SHADER_INT64
+                | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                | wgpu::Features::TEXTURE_BINDING_ARRAY
+                | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+                | wgpu::Features::FLOAT32_FILTERABLE
+                | wgpu::Features::SHADER_FLOAT32_ATOMIC
+                | wgpu::Features::CLEAR_TEXTURE
+                | wgpu::Features::IMMEDIATES
+                | wgpu::Features::EXPERIMENTAL_RAY_QUERY,
+            required_limits: wgpu::Limits {
+                max_immediate_size: 64,
+                max_storage_buffer_binding_size: (2 << 30) - 4,
+                max_buffer_size: (2 << 30) - 4,
+                max_storage_buffers_per_shader_stage: 128,
+                max_binding_array_elements_per_shader_stage: 4096,
+                max_bind_groups: 8,
+                ..wgpu::Limits::default()
+                    .using_resolution(adapter.limits())
+                    .using_acceleration_structure_values(adapter.limits())
+            },
+            experimental_features: unsafe { wgpu::ExperimentalFeatures::enabled() },
+            ..Default::default()
+        }),
+    )?;
 
     let sampler_data = match options.sampler.as_str() {
         "independent" => vec![0; 4],

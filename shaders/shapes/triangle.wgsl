@@ -65,17 +65,25 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         return RaycastResult();
     }
 
-    let p = hit.b.x * v0.p
-        + hit.b.y * v1.p
-        + hit.b.z * v2.p;
+    return triangle_raycast_result(tri, hit.b, hit.t);
+}
 
-    var n_shade = hit.b.x * v0.n
-        + hit.b.y * v1.n
-        + hit.b.z * v2.n;
+fn triangle_raycast_result(tri: Triangle, bary: vec3<f32>, t: f32) -> RaycastResult {
+    let v0 = TRI_VERTICES[tri.v0];
+    let v1 = TRI_VERTICES[tri.v1];
+    let v2 = TRI_VERTICES[tri.v2];
 
-    let uv = hit.b.x * vec2(v0.u, v0.v)
-        + hit.b.y * vec2(v1.u, v1.v)
-        + hit.b.z * vec2(v2.u, v2.v);
+    let p = bary.x * v0.p
+        + bary.y * v1.p
+        + bary.z * v2.p;
+
+    var n_shade = bary.x * v0.n
+        + bary.y * v1.n
+        + bary.z * v2.n;
+
+    let uv = bary.x * vec2(v0.u, v0.v)
+        + bary.y * vec2(v1.u, v1.v)
+        + bary.z * vec2(v2.u, v2.v);
 
     var n_geo = normalize(cross(v1.p - v0.p, v2.p - v0.p));
 
@@ -97,7 +105,7 @@ fn triangle_raycast(tri: Triangle, ray: Ray, t_max: f32) -> RaycastResult {
         tangent = (duv12.y * (v0.p - v2.p) - duv02.y * (v1.p - v2.p)) / det;
     }
 
-    return RaycastResult(true, p, n_shade, n_geo, tangent, hit.t, MaterialId(), LightId(), uv);
+    return RaycastResult(true, p, n_shade, n_geo, tangent, t, MaterialId(), LightId(), uv);
 }
 
 fn edge_function(p0: vec3f, p1: vec3f) -> f32 {

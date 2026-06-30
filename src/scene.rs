@@ -8,6 +8,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use bytemuck::NoUninit;
+use glam::Vec4;
 use glam::{BVec3, Vec3};
 use image::DynamicImage;
 use image::ImageBuffer;
@@ -25,7 +26,6 @@ use crate::storage_buffer_entry;
 mod light;
 mod light_sampler;
 mod material;
-mod node;
 mod other;
 mod shapes;
 mod spectra;
@@ -172,10 +172,15 @@ impl Scene {
                 storage_buffer_entry(1),
                 storage_buffer_entry(2),
                 storage_buffer_entry(3),
-                storage_buffer_entry(32),
-                storage_buffer_entry(33),
-                storage_buffer_entry(34),
-                storage_buffer_entry(35),
+                storage_buffer_entry(4),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 32,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::AccelerationStructure {
+                        vertex_return: false,
+                    },
+                    count: None,
+                },
                 wgpu::BindGroupLayoutEntry {
                     binding: 68,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -223,9 +228,9 @@ impl Scene {
         layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup {
         // let spheres = make_buffer(device, &self.spheres);
-        let triangles = make_buffer(device, &self.triangles);
+        let triangles = make_buffer_blas(device, &self.triangles);
 
-        let triangle_vertices = make_buffer(device, &self.triangle_vertices);
+        let triangle_vertices = make_buffer_blas(device, &self.triangle_vertices);
         let triangle_properties = make_buffer(device, &self.triangle_properties);
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
@@ -265,23 +270,89 @@ impl Scene {
             false => self.images.iter(),
         };
 
-        let mut accel_build = node::AccelerationStructureBuild::default();
-        let obj_ids = self
-            .objects
-            .iter()
-            .map(|groups| accel_build.create_blas(groups, self))
-            .collect::<Vec<_>>();
-        let tlas = accel_build.create_tlas(
-            self.instances
+        let mut blases = vec![];
+        let mut obj_sizes = vec![];
+        let mut triangle_offsets = vec![];
+        let mut blas_triangle_offset_index = vec![];
+        for obj in &self.objects {
+            let tri_offset_index = triangle_offsets.len();
+            for range in obj {
+                triangle_offsets.push(range.start as u32);
+            }
+            let sizes = obj
                 .iter()
-                .map(|&(obj, tform)| (tform, obj_ids[obj])),
-            self,
-        );
+                .map(|range| wgpu::BlasTriangleGeometrySizeDescriptor {
+                    vertex_format: wgpu::VertexFormat::Float32x3,
+                    vertex_count: self.triangle_vertices.len() as u32,
+                    index_format: Some(wgpu::IndexFormat::Uint32),
+                    index_count: Some(3 * (range.end - range.start) as u32),
+                    flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
+                })
+                .collect::<Vec<_>>();
+            let blas = device.create_blas(
+                &wgpu::CreateBlasDescriptor {
+                    label: None,
+                    flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+                    update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+                },
+                wgpu::BlasGeometrySizeDescriptors::Triangles {
+                    descriptors: sizes.clone(),
+                },
+            );
+            blases.push(blas);
+            obj_sizes.push(sizes);
+            blas_triangle_offset_index.push(tri_offset_index as u32);
+        }
 
-        let root = make_buffer(device, &[tlas]);
-        let bvh = make_buffer(device, &accel_build.bvh_nodes);
-        let transform = make_buffer(device, &accel_build.transform_nodes);
-        let triangle_nodes = make_buffer(device, &accel_build.triangle_nodes);
+        let mut blas_builds = vec![];
+        for ((blas, obj), sizes) in blases.iter().zip(&self.objects).zip(&obj_sizes) {
+            let geometry = obj
+                .iter()
+                .zip(sizes)
+                .map(|(range, size)| wgpu::BlasTriangleGeometry {
+                    size,
+                    vertex_buffer: &triangle_vertices,
+                    first_vertex: 0,
+                    vertex_stride: std::mem::size_of::<TriVertex>() as u64,
+                    index_buffer: Some(&triangles),
+                    first_index: Some(range.start as u32 * 3),
+                    transform_buffer: None,
+                    transform_buffer_offset: None,
+                })
+                .collect();
+            blas_builds.push(wgpu::BlasBuildEntry {
+                blas,
+                geometry: wgpu::BlasGeometries::TriangleGeometries(geometry),
+            });
+        }
+
+        let mut tlas = device.create_tlas(&wgpu::CreateTlasDescriptor {
+            label: None,
+            max_instances: self.instances.len() as u32,
+            flags: wgpu::AccelerationStructureFlags::PREFER_FAST_TRACE,
+            update_mode: wgpu::AccelerationStructureUpdateMode::Build,
+        });
+        for (tlas_instance, &(obj_id, tform)) in tlas[0..self.instances.len()]
+            .iter_mut()
+            .zip(&self.instances)
+        {
+            assert_eq!(tform.m.row(3), Vec4::W);
+            let tform = tform.m.transpose().to_cols_array()[..12]
+                .try_into()
+                .unwrap();
+            *tlas_instance = Some(wgpu::TlasInstance::new(
+                &blases[obj_id],
+                tform,
+                blas_triangle_offset_index[obj_id],
+                !0,
+            ));
+        }
+
+        let triangle_offsets = make_buffer(device, &triangle_offsets);
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        encoder.build_acceleration_structures(blas_builds.iter(), [&tlas]);
+        queue.submit([encoder.finish()]);
 
         let views: Vec<_> = images
             .map(|img| {
@@ -345,10 +416,11 @@ impl Scene {
                 make_entry(1, &triangles),
                 make_entry(2, &triangle_vertices),
                 make_entry(3, &triangle_properties),
-                make_entry(32, &root),
-                make_entry(33, &bvh),
-                make_entry(34, &transform),
-                make_entry(35, &triangle_nodes),
+                make_entry(4, &triangle_offsets),
+                wgpu::BindGroupEntry {
+                    binding: 32,
+                    resource: tlas.as_binding(),
+                },
                 wgpu::BindGroupEntry {
                     binding: 68,
                     resource: wgpu::BindingResource::TextureViewArray(&views_refs),
@@ -479,6 +551,18 @@ fn make_buffer<T: NoUninit>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer {
             false => bytemuck::cast_slice(data),
         },
         usage: wgpu::BufferUsages::STORAGE,
+    })
+}
+
+fn make_buffer_blas<T: NoUninit>(device: &wgpu::Device, data: &[T]) -> wgpu::Buffer {
+    let empty = vec![0; std::mem::size_of::<T>()];
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some(std::any::type_name::<T>()),
+        contents: match data.is_empty() {
+            true => &empty,
+            false => bytemuck::cast_slice(data),
+        },
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::BLAS_INPUT,
     })
 }
 

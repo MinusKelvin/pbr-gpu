@@ -3,44 +3,11 @@
 
 @group(0) @binding(3)
 var<storage> TRI_PROPERTIES: array<TriProperty>;
+@group(0) @binding(4)
+var<storage> TRI_INDEX_OFFSETS: array<u32>;
 
 @group(0) @binding(32)
-var<storage> BVH_ROOT: u32;
-@group(0) @binding(33)
-var<storage> BVH_NODES: array<BvhNode>;
-@group(0) @binding(34)
-var<storage> TRANSFORM_NODES: array<TransformNode>;
-@group(0) @binding(35)
-var<storage> PRIMITIVE_NODES: array<PrimitiveNode>;
-
-const NODE_TAG_BITS: u32 = 2;
-const NODE_TAG_SHIFT: u32 = 32 - NODE_TAG_BITS;
-const NODE_IDX_MASK: u32 = (1 << NODE_TAG_SHIFT) - 1;
-const NODE_TAG_MASK: u32 = ~NODE_IDX_MASK;
-
-const NODE_BVH: u32 = 0 << NODE_TAG_SHIFT;
-const NODE_TRANSFORM: u32 = 1 << NODE_TAG_SHIFT;
-const NODE_PRIMITIVE: u32 = 2 << NODE_TAG_SHIFT;
-
-struct NodeId {
-    id: u32,
-}
-
-struct BvhNode {
-    min: vec3f,
-    flags: u32,
-    max: vec3f,
-    far_node: NodeId,
-}
-
-struct TransformNode {
-    transform: Transform,
-    object: NodeId,
-}
-
-struct PrimitiveNode {
-    shape: ShapeId,
-}
+var SCENE_AS: acceleration_structure;
 
 struct TriProperty {
     material: MaterialId,
@@ -48,120 +15,33 @@ struct TriProperty {
     alpha: FloatTextureId,
 }
 
-struct TransformStackEntry {
-    old_ray: Ray,
-    idx: u32,
-}
+fn scene_raycast(ray: Ray, max_t: f32) -> RaycastResult {
+    let ray_desc = RayDesc(0, ~0u, 0, max_t, ray.o, ray.d);
+    var tracer: ray_query;
 
-fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
-    var closest: RaycastResult;
-    closest.t = max_t;
+    rayQueryInitialize(&tracer, SCENE_AS, ray_desc);
 
-    var ray = ray_;
-    var inv_ray_dir = 1 / ray.d;
-    var mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
-
-    var bvh_stack: array<NodeId, 64>;
-    var i = 0;
-    bvh_stack[0] = NodeId(BVH_ROOT);
-
-    var transform_stack: array<TransformStackEntry, 2>;
-    var transform_i = 0;
-
-    const POP_TRANSFORM_SENTINEL: u32 = ~0u;
-
-    while i >= 0 {
-        if bvh_stack[i].id == POP_TRANSFORM_SENTINEL {
-            transform_i -= 1;
-            ray = transform_stack[transform_i].old_ray;
-            inv_ray_dir = 1 / ray.d;
-            mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
-            i -= 1;
-            continue;
-        }
-
-        switch bvh_stack[i].id & NODE_TAG_MASK {
-            case NODE_BVH {
-                let node = BVH_NODES[bvh_stack[i].id];
-                let t0 = (node.min - ray.o) * inv_ray_dir;
-                let t1 = (node.max - ray.o) * inv_ray_dir;
-                let t_near = min(t0, t1);
-                let t_far = max(t0, t1);
-                let t_enter = max(max(t_near.x, t_near.y), t_near.z);
-                let t_exit = min(min(t_far.x, t_far.y), t_far.z);
-
-                if t_enter >= closest.t || t_enter > t_exit || t_exit <= 0 {
-                    i -= 1;
-                } else if (node.far_node.id & NODE_TAG_MASK) == NODE_BVH {
-                    let left = NodeId(bvh_stack[i].id + 1);
-                    if (mask & node.flags) == 0 {
-                        bvh_stack[i] = node.far_node;
-                        bvh_stack[i + 1] = left;
-                    } else {
-                        bvh_stack[i] = left;
-                        bvh_stack[i + 1] = node.far_node;
-                    }
-                    i += 1;
-                } else {
-                    bvh_stack[i] = node.far_node;
-                }
-            }
-            case NODE_TRANSFORM {
-                let node = TRANSFORM_NODES[bvh_stack[i].id & NODE_IDX_MASK];
-
-                transform_stack[transform_i] = TransformStackEntry(
-                    ray,
-                    bvh_stack[i].id & NODE_IDX_MASK
-                );
-                transform_i += 1;
-
-                ray = transform_ray(node.transform, ray);
-                inv_ray_dir = 1 / ray.d;
-                mask = u32(ray.d.x < 0) | u32(ray.d.y < 0) << 1 | u32(ray.d.z < 0) << 2;
-
-                bvh_stack[i] = NodeId(POP_TRANSFORM_SENTINEL);
-                bvh_stack[i + 1] = node.object;
-                i += 1;
-            }
-            case NODE_PRIMITIVE {
-                let node = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK];
-                let props = TRI_PROPERTIES[node.shape.id];
-                var result = shape_raycast(node.shape, ray, closest.t);
-                if result.hit {
-                    let alpha = float_texture_evaluate(props.alpha, result.uv);
-                    if alpha < 1 {
-                        var h = bitcast<u32>(result.t);
-                        h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.o))).w;
-                        h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.d))).w;
-                        let u = bits_to_f32(h);
-
-                        result.hit = u < alpha;
-                    }
-                }
-                if result.hit {
-                    closest = result;
-                    closest.material = props.material;
-                    closest.light = props.light;
-                    for (var j = transform_i; j > 0; j--) {
-                        let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
-                        closest.p = transform_point_inv(t, closest.p);
-                        closest.n = transform_normal_inv(t, closest.n);
-                        closest.tangent = transform_vector_inv(t, closest.tangent);
-                        // todo: transform tangents
-                    }
-                }
-                i -= 1;
-            }
-            default {
-                // unreachable
-                return RaycastResult();
-            }
-        }
+    while rayQueryProceed(&tracer) {
+        let info = rayQueryGetCandidateIntersection(&tracer);
+        rayQueryConfirmIntersection(&tracer);
     }
 
-    if closest.hit {
-        closest.n = normalize(closest.n);
+    let hit = rayQueryGetCommittedIntersection(&tracer);
+    if hit.kind == RAY_QUERY_INTERSECTION_NONE {
+        return RaycastResult();
     }
 
-    return closest;
+    let tri_id = TRI_INDEX_OFFSETS[hit.instance_custom_data + hit.geometry_index]
+        + hit.primitive_index;
+    let b = hit.barycentrics;
+    let bary = vec3f(1 - b.x - b.y, b);
+
+    var result = triangle_raycast_result(TRIANGLES[tri_id], bary, hit.t);
+    result.material = TRI_PROPERTIES[tri_id].material;
+    result.light = TRI_PROPERTIES[tri_id].light;
+    result.p = hit.object_to_world * vec4(result.p, 1);
+    result.n = (transpose(hit.world_to_object) * result.n).xyz;
+    result.tangent = hit.object_to_world * vec4(result.tangent, 0);
+
+    return result;
 }

@@ -9,6 +9,8 @@ pub fn load_shader(
 ) -> Result<String> {
     let mut output = String::new();
 
+    output.push_str("enable wgpu_ray_query;\n");
+
     read_shader(&mut output, path.as_ref(), flags, &mut HashSet::new())?;
 
     Ok(output)
