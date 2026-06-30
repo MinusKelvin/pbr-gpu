@@ -286,7 +286,7 @@ impl Scene {
                     vertex_count: self.triangle_vertices.len() as u32,
                     index_format: Some(wgpu::IndexFormat::Uint32),
                     index_count: Some(3 * (range.end - range.start) as u32),
-                    flags: wgpu::AccelerationStructureGeometryFlags::OPAQUE,
+                    flags: wgpu::AccelerationStructureGeometryFlags::empty(),
                 })
                 .collect::<Vec<_>>();
             let blas = device.create_blas(

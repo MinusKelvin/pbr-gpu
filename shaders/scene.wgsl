@@ -23,7 +23,23 @@ fn scene_raycast(ray: Ray, max_t: f32) -> RaycastResult {
 
     while rayQueryProceed(&tracer) {
         let info = rayQueryGetCandidateIntersection(&tracer);
-        rayQueryConfirmIntersection(&tracer);
+        if info.kind == RAY_QUERY_INTERSECTION_TRIANGLE {
+            let tri_id = TRI_INDEX_OFFSETS[info.instance_custom_data + info.geometry_index]
+                + info.primitive_index;
+            let b = info.barycentrics;
+            let bary = vec3f(1 - b.x - b.y, b);
+            let hit = triangle_raycast_result(TRIANGLES[tri_id], bary, info.t);
+            let alpha = float_texture_evaluate(TRI_PROPERTIES[tri_id].alpha, hit.uv);
+
+            var h = bitcast<u32>(hit.t);
+            h = hash_4d(vec4u(h, bitcast<vec3u>(ray.o))).w;
+            h = hash_4d(vec4u(h, bitcast<vec3u>(ray.d))).w;
+            let u = bits_to_f32(h);
+
+            if u < alpha {
+                rayQueryConfirmIntersection(&tracer);
+            }
+        }
     }
 
     let hit = rayQueryGetCommittedIntersection(&tracer);
