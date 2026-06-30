@@ -40,7 +40,7 @@ fn scene_raycast(ray: Ray, max_t: f32) -> RaycastResult {
     result.material = TRI_PROPERTIES[tri_id].material;
     result.light = TRI_PROPERTIES[tri_id].light;
     result.p = hit.object_to_world * vec4(result.p, 1);
-    result.n = (transpose(hit.world_to_object) * result.n).xyz;
+    result.n = normalize((transpose(hit.world_to_object) * result.n).xyz);
     result.tangent = hit.object_to_world * vec4(result.tangent, 0);
 
     return result;
