@@ -1,6 +1,9 @@
 #import /shapes.wgsl
 #import /transform.wgsl
 
+@group(0) @binding(3)
+var<storage> TRI_PROPERTIES: array<TriProperty>;
+
 @group(0) @binding(32)
 var<storage> BVH_ROOT: u32;
 @group(0) @binding(33)
@@ -37,6 +40,9 @@ struct TransformNode {
 
 struct PrimitiveNode {
     shape: ShapeId,
+}
+
+struct TriProperty {
     material: MaterialId,
     light: LightId,
     alpha: FloatTextureId,
@@ -119,9 +125,10 @@ fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
             }
             case NODE_PRIMITIVE {
                 let node = PRIMITIVE_NODES[bvh_stack[i].id & NODE_IDX_MASK];
+                let props = TRI_PROPERTIES[node.shape.id];
                 var result = shape_raycast(node.shape, ray, closest.t);
                 if result.hit {
-                    let alpha = float_texture_evaluate(node.alpha, result.uv);
+                    let alpha = float_texture_evaluate(props.alpha, result.uv);
                     if alpha < 1 {
                         var h = bitcast<u32>(result.t);
                         h = hash_4d(vec4u(h, bitcast<vec3u>(ray_.o))).w;
@@ -133,8 +140,8 @@ fn scene_raycast(ray_: Ray, max_t: f32) -> RaycastResult {
                 }
                 if result.hit {
                     closest = result;
-                    closest.material = node.material;
-                    closest.light = node.light;
+                    closest.material = props.material;
+                    closest.light = props.light;
                     for (var j = transform_i; j > 0; j--) {
                         let t = TRANSFORM_NODES[transform_stack[j - 1].idx].transform;
                         closest.p = transform_point_inv(t, closest.p);

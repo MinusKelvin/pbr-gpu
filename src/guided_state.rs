@@ -252,7 +252,7 @@ impl GuidedState {
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
         });
 
-        let bounds = scene.node_bounds(scene.root.unwrap());
+        let bounds: crate::scene::Bounds = todo!();//scene.node_bounds(scene.root.unwrap());
         let bounds = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
             contents: bytemuck::bytes_of(&SceneBounds {

@@ -1,7 +1,9 @@
+use std::ops::Range;
+
 use bytemuck::{NoUninit, Pod, Zeroable};
 use glam::Vec3;
 
-use crate::scene::{Bounds, Scene};
+use crate::scene::{Bounds, FloatTextureId, LightId, MaterialId, Scene};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -9,9 +11,9 @@ pub struct ShapeId(u32);
 
 #[derive(Copy, Clone, Debug)]
 #[repr(u32)]
-enum ShapeType {
-    Sphere = 0 << ShapeId::TAG_SHIFT,
-    Triangle = 1 << ShapeId::TAG_SHIFT,
+pub enum ShapeType {
+    // Sphere = 0 << ShapeId::TAG_SHIFT,
+    Triangle = 0 << ShapeId::TAG_SHIFT,
 }
 
 #[allow(unused)]
@@ -21,7 +23,7 @@ impl ShapeId {
     const IDX_MASK: u32 = (1 << Self::TAG_SHIFT) - 1;
     const TAG_MASK: u32 = !Self::IDX_MASK;
 
-    fn new(ty: ShapeType, idx: usize) -> Self {
+    pub fn new(ty: ShapeType, idx: usize) -> Self {
         assert!(
             idx <= Self::IDX_MASK as usize,
             "cannot exceed {} {ty:?} shapes",
@@ -42,29 +44,29 @@ impl ShapeId {
 impl Scene {
     pub fn shape_bounds(&self, shape: ShapeId) -> Bounds {
         match shape.ty() {
-            ShapeType::Sphere => self.spheres[shape.idx()].bounds(),
+            // ShapeType::Sphere => self.spheres[shape.idx()].bounds(),
             ShapeType::Triangle => self.triangles[shape.idx()].bounds(&self.triangle_vertices),
         }
     }
 
     pub fn shape_area(&self, shape: ShapeId) -> f32 {
         match shape.ty() {
-            ShapeType::Sphere => self.spheres[shape.idx()].area(),
+            // ShapeType::Sphere => self.spheres[shape.idx()].area(),
             ShapeType::Triangle => self.triangles[shape.idx()].area(&self.triangle_vertices),
         }
     }
 
-    pub fn add_sphere(&mut self, sphere: Sphere) -> ShapeId {
-        let id = ShapeId::new(ShapeType::Sphere, self.spheres.len());
-        self.spheres.push(sphere);
-        id
-    }
+    // pub fn add_sphere(&mut self, sphere: Sphere) -> ShapeId {
+    //     let id = ShapeId::new(ShapeType::Sphere, self.spheres.len());
+    //     self.spheres.push(sphere);
+    //     id
+    // }
 
     pub fn add_triangles(
         &mut self,
         verts: &[TriVertex],
         tris: &[[u32; 3]],
-    ) -> impl Iterator<Item = ShapeId> + use<> {
+    ) -> Range<usize> {
         let base_index = self.triangle_vertices.len();
         self.triangle_vertices.extend(verts);
 
@@ -74,31 +76,31 @@ impl Scene {
         }));
         let end_idx = self.triangles.len();
 
-        (base_idx..end_idx).map(|idx| ShapeId::new(ShapeType::Triangle, idx))
+        base_idx..end_idx
     }
 }
 
-#[derive(Copy, Clone, Debug, Zeroable, Pod)]
-#[repr(C)]
-pub struct Sphere {
-    pub z_min: f32,
-    pub z_max: f32,
-    pub flip_normal: u32,
-}
+// #[derive(Copy, Clone, Debug, Zeroable, Pod)]
+// #[repr(C)]
+// pub struct Sphere {
+//     pub z_min: f32,
+//     pub z_max: f32,
+//     pub flip_normal: u32,
+// }
 
-impl Sphere {
-    fn bounds(&self) -> Bounds {
-        Bounds {
-            min: Vec3::new(-1.0, -1.0, self.z_min),
-            max: Vec3::new(1.0, 1.0, self.z_max),
-        }
-    }
+// impl Sphere {
+//     fn bounds(&self) -> Bounds {
+//         Bounds {
+//             min: Vec3::new(-1.0, -1.0, self.z_min),
+//             max: Vec3::new(1.0, 1.0, self.z_max),
+//         }
+//     }
 
-    fn area(&self) -> f32 {
-        // sphere sampling not supported yet
-        0.0
-    }
-}
+//     fn area(&self) -> f32 {
+//         // sphere sampling not supported yet
+//         0.0
+//     }
+// }
 
 #[derive(Copy, Clone, Debug, Zeroable, Pod)]
 #[repr(C)]
@@ -124,4 +126,12 @@ impl Triangle {
         let [p0, p1, p2] = self.vertices.map(|i| verts[i as usize].p);
         (p1 - p0).cross(p2 - p0).length() / 2.0
     }
+}
+
+#[derive(Copy, Clone, Debug, NoUninit)]
+#[repr(C)]
+pub struct TriangleProperties {
+    pub material: MaterialId,
+    pub light: LightId,
+    pub alpha: FloatTextureId,
 }

@@ -33,7 +33,7 @@ Statement: () = {
     "Camera" <ty:String> <props:Properties> => builder.camera(ty, props.with_ctx("camera", ty)),
 
     "Shape" <ty:String> <props:Properties> => match ty {
-        "sphere" => builder.sphere(props.with_ctx("shape", ty)),
+        // "sphere" => builder.sphere(props.with_ctx("shape", ty)),
         "trianglemesh" => builder.triangle_mesh(props.with_ctx("shape", ty)),
         "loopsubdiv" => builder.loop_subdivision_surface(props.with_ctx("shape", ty)),
         "plymesh" => builder.plymesh(props.with_ctx("shape", ty)),

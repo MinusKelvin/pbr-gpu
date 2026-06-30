@@ -4,18 +4,19 @@ use std::f32::consts::PI;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::BufReader;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use flate2::read::GzDecoder;
-use glam::{DMat3, DMat4, DVec2, DVec3, Vec2, Vec3};
+use glam::{DMat3, DMat4, DVec2, DVec3, Mat4, Vec2, Vec3};
 use lalrpop_util::{ErrorRecovery, lalrpop_mod, lexer::Token};
 
 use crate::options::RenderOptions;
 use crate::scene::{
     CheckerboardTexture, ConductorReflTexture, ConstantFloatTexture, ConstantSpectrumTexture,
-    FloatTextureId, ImageFloatTexture, ImageRgbTexture, LightId, MaterialId, MixTexture, NodeId,
-    PrimitiveNode, ScaleTexture, Scene, ShapeId, SpectrumId, Sphere, Texture, TriVertex,
+    FloatTextureId, ImageFloatTexture, ImageRgbTexture, LightId, MaterialId, MixTexture,
+    ScaleTexture, Scene, ShapeId, ShapeType, SpectrumId, Texture, TriVertex, TriangleProperties,
     UvMappingParams,
 };
 use crate::spectrum::SpectrumData;
@@ -40,7 +41,7 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
         stack: vec![],
         render_options: RenderOptions::default(),
         scene,
-        current_prims: vec![],
+        current_object: vec![],
         lights: vec![],
         objects: HashMap::new(),
         textures: HashMap::new(),
@@ -52,8 +53,11 @@ pub fn load_pbrt_scene(spectrum_data: &SpectrumData, path: &Path) -> (RenderOpti
     let t = Instant::now();
     builder.include(Path::new(path.file_name().unwrap()));
 
-    let root = builder.scene.add_bvh(&builder.current_prims);
-    builder.scene.root = Some(root);
+    if !builder.current_object.is_empty() {
+        let id = builder.scene.objects.len();
+        builder.scene.objects.push(builder.current_object);
+        builder.scene.instances.push((id, Transform::from_mat4(Mat4::IDENTITY)));
+    }
 
     let root_ls = builder.scene.add_power_light_sampler(&builder.lights);
     builder.scene.root_ls = Some(root_ls);
@@ -73,14 +77,14 @@ pub struct SceneBuilder {
     render_options: RenderOptions,
     scene: Scene,
 
-    current_prims: Vec<NodeId>,
+    current_object: Vec<Range<usize>>,
     lights: Vec<LightId>,
 
-    objects: HashMap<String, NodeId>,
+    objects: HashMap<String, usize>,
     textures: HashMap<String, Box<dyn Texture>>,
     materials: HashMap<String, MaterialId>,
 
-    object_state: Option<(String, Vec<NodeId>)>,
+    object_state: Option<(String, Vec<Range<usize>>)>,
 }
 
 #[derive(Clone)]
@@ -127,21 +131,22 @@ impl SceneBuilder {
     fn begin_object(&mut self, name: &str) {
         assert!(self.object_state.is_none());
         let name = name.to_owned();
-        let old_prims = std::mem::take(&mut self.current_prims);
-        self.object_state = Some((name, old_prims));
+        let old_object = std::mem::take(&mut self.current_object);
+        self.object_state = Some((name, old_object));
     }
 
     fn end_object(&mut self) {
-        let Some((name, old_prims)) = self.object_state.take() else {
+        let Some((name, old_object)) = self.object_state.take() else {
             panic!("ended object which was never started");
         };
-        if self.current_prims.is_empty() {
+        let object = std::mem::replace(&mut self.current_object, old_object);
+        if object.is_empty() {
             println!("Warning: Object {name} contains no primitives");
             return;
         }
-        let obj_bvh = self.scene.add_bvh(&self.current_prims);
-        self.current_prims = old_prims;
-        self.objects.insert(name, obj_bvh);
+        let id = self.scene.objects.len();
+        self.objects.insert(name, id);
+        self.scene.objects.push(object);
     }
 
     fn instance_object(&mut self, name: &str) {
@@ -149,14 +154,11 @@ impl SceneBuilder {
             println!("Warning: Attempt to instance object {name} which does not exist");
             return;
         };
-        let transformed = self.scene.add_transform(
-            Transform {
-                m: self.state.transform.inverse().as_mat4(),
-                m_inv: self.state.transform.as_mat4(),
-            },
-            obj,
-        );
-        self.current_prims.push(transformed);
+        let transform = Transform {
+            m: self.state.transform.inverse().as_mat4(),
+            m_inv: self.state.transform.as_mat4(),
+        };
+        self.scene.instances.push((obj, transform));
     }
 
     fn identity(&mut self) {
@@ -825,54 +827,54 @@ impl SceneBuilder {
         println!("Unrecognized area light type {ty}");
     }
 
-    fn sphere(&mut self, props: Props) {
-        let radius = props.get_float("radius").unwrap_or(1.0);
-        let z_min = props.get_float("zmin").unwrap_or(-radius);
-        let z_max = props.get_float("zmax").unwrap_or(radius);
+    // fn sphere(&mut self, props: Props) {
+    //     let radius = props.get_float("radius").unwrap_or(1.0);
+    //     let z_min = props.get_float("zmin").unwrap_or(-radius);
+    //     let z_max = props.get_float("zmax").unwrap_or(radius);
 
-        let shape_id = self.scene.add_sphere(Sphere {
-            z_min: (z_min / radius) as f32,
-            z_max: (z_max / radius) as f32,
-            flip_normal: false as u32,
-        });
+    //     let shape_id = self.scene.add_sphere(Sphere {
+    //         z_min: (z_min / radius) as f32,
+    //         z_max: (z_max / radius) as f32,
+    //         flip_normal: false as u32,
+    //     });
 
-        let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
+    //     let transform = self.state.transform * DMat4::from_scale(DVec3::splat(radius));
 
-        let alpha = self
-            .texture_property(false, &props, "alpha", None)
-            .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
-        let alpha = self.scene.float_texture_evaluator(&*alpha);
+    //     let alpha = self
+    //         .texture_property(false, &props, "alpha", None)
+    //         .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
+    //     let alpha = self.scene.float_texture_evaluator(&*alpha);
 
-        let light = match self.state.area_light {
-            Some((spectrum, two_sided)) => {
-                println!("Note: light sampling spheres is currently not supported");
-                self.scene
-                    .add_area_light(shape_id, spectrum, two_sided, alpha)
-            }
-            None => LightId::ZERO,
-        };
+    //     let light = match self.state.area_light {
+    //         Some((spectrum, two_sided)) => {
+    //             println!("Note: light sampling spheres is currently not supported");
+    //             self.scene
+    //                 .add_area_light(shape_id, spectrum, two_sided, alpha)
+    //         }
+    //         None => LightId::ZERO,
+    //     };
 
-        let primitive = self.scene.add_primitive(PrimitiveNode {
-            shape: shape_id,
-            material: self.state.material,
-            light,
-            alpha,
-        });
-        let transformed = self.scene.add_transform(
-            Transform {
-                m: transform.inverse().as_mat4(),
-                m_inv: transform.as_mat4(),
-            },
-            primitive,
-        );
+    //     let primitive = self.scene.add_primitive(PrimitiveNode {
+    //         shape: shape_id,
+    //         material: self.state.material,
+    //         light,
+    //         alpha,
+    //     });
+    //     let transformed = self.scene.add_transform(
+    //         Transform {
+    //             m: transform.inverse().as_mat4(),
+    //             m_inv: transform.as_mat4(),
+    //         },
+    //         primitive,
+    //     );
 
-        if light != LightId::ZERO {
-            self.scene.set_area_light_transform(light, transformed);
-            self.lights.push(light);
-        }
+    //     if light != LightId::ZERO {
+    //         self.scene.set_area_light_transform(light, transformed);
+    //         self.lights.push(light);
+    //     }
 
-        self.current_prims.push(transformed);
-    }
+    //     self.current_prims.push(transformed);
+    // }
 
     fn triangle_mesh(&mut self, props: Props) {
         let transform_dir = DMat3::from_mat4(self.state.transform);
@@ -921,8 +923,8 @@ impl SceneBuilder {
             .map(|is| is.try_into().unwrap())
             .collect::<Vec<_>>();
 
-        let iter = self.scene.add_triangles(&verts, &tris);
-        self.create_primitives(alpha, iter);
+        let range = self.scene.add_triangles(&verts, &tris);
+        self.setup_triangle_properties(alpha, range);
     }
 
     fn loop_subdivision_surface(&mut self, props: Props) {
@@ -941,32 +943,38 @@ impl SceneBuilder {
             .unwrap_or_else(|| Box::new(ConstantFloatTexture { value: 1.0 }));
         let alpha = self.scene.float_texture_evaluator(&*alpha);
 
-        match path.extension().and_then(OsStr::to_str) {
-            Some("gz") => {
-                let iter = super::ply::load_plymesh(
-                    &mut self.scene,
-                    &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
-                    self.state.transform,
-                );
-                self.create_primitives(alpha, iter);
-            }
-            _ => {
-                let iter = super::ply::load_plymesh(
-                    &mut self.scene,
-                    &mut BufReader::new(File::open(path).unwrap()),
-                    self.state.transform,
-                );
-                self.create_primitives(alpha, iter);
-            }
+        let range = match path.extension().and_then(OsStr::to_str) {
+            Some("gz") => super::ply::load_plymesh(
+                &mut self.scene,
+                &mut BufReader::new(GzDecoder::new(File::open(path).unwrap())),
+                self.state.transform,
+            ),
+            _ => super::ply::load_plymesh(
+                &mut self.scene,
+                &mut BufReader::new(File::open(path).unwrap()),
+                self.state.transform,
+            ),
         };
+        self.setup_triangle_properties(alpha, range);
     }
 
     fn unrecognized_shape(&mut self, ty: &str) {
         println!("Unrecognized shape type {ty}");
     }
 
-    fn create_primitives(&mut self, alpha: FloatTextureId, shapes: impl Iterator<Item = ShapeId>) {
-        self.current_prims.extend(shapes.map(|shape| {
+    fn setup_triangle_properties(&mut self, alpha: FloatTextureId, tris: Range<usize>) {
+        if let Some(last) = self.current_object.last_mut()
+            && last.end == tris.start
+        {
+            last.end = tris.end;
+        } else {
+            self.current_object.push(tris.clone());
+        }
+
+        assert_eq!(tris.start, self.scene.triangle_properties.len());
+
+        for idx in tris {
+            let shape = ShapeId::new(ShapeType::Triangle, idx);
             let light = match self.state.area_light {
                 Some((rgb, two_sided)) => self.scene.add_area_light(shape, rgb, two_sided, alpha),
                 None => LightId::ZERO,
@@ -974,13 +982,12 @@ impl SceneBuilder {
             if light != LightId::ZERO {
                 self.lights.push(light);
             }
-            self.scene.add_primitive(PrimitiveNode {
-                shape,
+            self.scene.triangle_properties.push(TriangleProperties {
                 material: self.state.material,
                 light,
                 alpha,
-            })
-        }));
+            });
+        }
     }
 }
 

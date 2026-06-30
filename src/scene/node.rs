@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::time::Instant;
 
 use bytemuck::NoUninit;
@@ -5,7 +6,7 @@ use glam::Vec3;
 use rayon::prelude::*;
 
 use crate::Transform;
-use crate::scene::{Bounds, FloatTextureId, LightId, MaterialId, Scene, ShapeId};
+use crate::scene::{Bounds, Scene, ShapeId, ShapeType};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -17,6 +18,13 @@ enum NodeType {
     Bvh = 0 << NodeId::TAG_SHIFT,
     Transform = 1 << NodeId::TAG_SHIFT,
     Primitive = 2 << NodeId::TAG_SHIFT,
+}
+
+#[derive(Default)]
+pub struct AccelerationStructureBuild {
+    pub bvh_nodes: Vec<BvhNode>,
+    pub transform_nodes: Vec<TransformNode>,
+    pub triangle_nodes: Vec<TriangleNode>,
 }
 
 #[allow(unused)]
@@ -46,14 +54,37 @@ impl NodeId {
     }
 }
 
-impl Scene {
-    pub fn add_primitive(&mut self, prim: PrimitiveNode) -> NodeId {
-        let id = NodeId::new(NodeType::Primitive, self.primitive_nodes.len());
-        self.primitive_nodes.push(prim);
+impl AccelerationStructureBuild {
+    pub fn create_blas(&mut self, tri_groups: &[Range<usize>], scene: &Scene) -> NodeId {
+        let nodes = tri_groups
+            .iter()
+            .cloned()
+            .flatten()
+            .map(|id| self.add_triangle_node(id as u32))
+            .collect::<Vec<_>>();
+        self.add_bvh(&nodes, scene)
+    }
+
+    pub fn create_tlas(
+        &mut self,
+        instances: impl Iterator<Item = (Transform, NodeId)>,
+        scene: &Scene,
+    ) -> NodeId {
+        let nodes: Vec<_> = instances
+            .map(|(tform, node)| self.add_transform(tform, node))
+            .collect();
+        self.add_bvh(&nodes, scene)
+    }
+
+    fn add_triangle_node(&mut self, triangle: u32) -> NodeId {
+        let id = NodeId::new(NodeType::Primitive, self.triangle_nodes.len());
+        self.triangle_nodes.push(TriangleNode {
+            tri_index: triangle,
+        });
         id
     }
 
-    pub fn add_transform(&mut self, transform: Transform, node: NodeId) -> NodeId {
+    fn add_transform(&mut self, transform: Transform, node: NodeId) -> NodeId {
         let id = NodeId::new(NodeType::Transform, self.transform_nodes.len());
         self.transform_nodes.push(TransformNode {
             transform,
@@ -63,11 +94,13 @@ impl Scene {
         id
     }
 
-    pub fn add_bvh(&mut self, nodes: &[NodeId]) -> NodeId {
+    fn add_bvh(&mut self, nodes: &[NodeId], scene: &Scene) -> NodeId {
         let t = Instant::now();
 
-        let mut bounded_objects: Vec<_> =
-            nodes.iter().map(|&id| (id, self.node_bounds(id))).collect();
+        let mut bounded_objects: Vec<_> = nodes
+            .iter()
+            .map(|&id| (id, self.node_bounds(id, scene)))
+            .collect();
         let result = self.build_bvh(&mut bounded_objects);
 
         println!("Build BVH in {:.3?}", t.elapsed());
@@ -137,9 +170,12 @@ impl Scene {
         NodeId::new(NodeType::Bvh, idx)
     }
 
-    pub fn node_bounds(&self, node: NodeId) -> Bounds {
+    pub fn node_bounds(&self, node: NodeId, scene: &Scene) -> Bounds {
         match node.ty() {
-            NodeType::Primitive => self.shape_bounds(self.primitive_nodes[node.idx()].shape),
+            NodeType::Primitive => scene.shape_bounds(ShapeId::new(
+                ShapeType::Triangle,
+                self.triangle_nodes[node.idx()].tri_index as usize,
+            )),
             NodeType::Bvh => {
                 let bvh = &self.bvh_nodes[node.idx()];
                 Bounds {
@@ -149,7 +185,7 @@ impl Scene {
             }
             NodeType::Transform => {
                 let node = &self.transform_nodes[node.idx()];
-                let bounds = self.node_bounds(node.object);
+                let bounds = self.node_bounds(node.object, scene);
                 Bounds::from_points(
                     bounds
                         .corners()
@@ -180,9 +216,6 @@ pub struct TransformNode {
 
 #[derive(Copy, Clone, Debug, NoUninit)]
 #[repr(C)]
-pub struct PrimitiveNode {
-    pub shape: ShapeId,
-    pub material: MaterialId,
-    pub light: LightId,
-    pub alpha: FloatTextureId,
+pub struct TriangleNode {
+    pub tri_index: u32,
 }

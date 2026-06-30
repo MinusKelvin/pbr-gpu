@@ -4,7 +4,6 @@
 
 struct AreaLight {
     spectrum: SpectrumId,
-    transform_node: NodeId,
     shape: ShapeId,
     alpha: FloatTextureId,
     two_sided: u32,
@@ -19,10 +18,6 @@ fn light_area_emission(light: AreaLight, ray: Ray, hit: RaycastResult, wl: Wavel
 }
 
 fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: vec2f) -> LightSample {
-    if light.transform_node.id != 0 {
-        return LightSample();
-    }
-
     let shape_sample = shape_sample(light.shape, ref_p, random);
     if shape_sample.pdf_wrt_area == 0 {
         return LightSample();
@@ -55,10 +50,6 @@ fn light_area_sample(light: AreaLight, ref_p: vec3f, wl: Wavelengths, random: ve
 }
 
 fn light_area_pdf(light: AreaLight, ref_p: vec3f, dir: vec3f) -> f32 {
-    if light.transform_node.id != 0 {
-        return 0;
-    }
-
     let result = shape_raycast(light.shape, Ray(ref_p, dir, 0), FLOAT_MAX);
     if !result.hit {
         return 0;

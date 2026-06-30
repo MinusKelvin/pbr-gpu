@@ -2,7 +2,7 @@ use bytemuck::NoUninit;
 use glam::{DMat4, Vec3};
 
 use crate::Transform;
-use crate::scene::{FloatTextureId, NodeId, Scene, ShapeId, SpectrumId, TableSampler2d};
+use crate::scene::{FloatTextureId, Scene, ShapeId, SpectrumId, TableSampler2d};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, NoUninit)]
 #[repr(C)]
@@ -107,7 +107,6 @@ impl Scene {
         let id = LightId::new(LightType::Area, self.area_lights.len());
         self.area_lights.push(AreaLight {
             spectrum,
-            transform_node: NodeId::ZERO,
             shape,
             alpha,
             two_sided: two_sided as u32,
@@ -132,10 +131,6 @@ impl Scene {
             _padding: [0; 2],
         });
         id
-    }
-
-    pub fn set_area_light_transform(&mut self, light: LightId, transform: NodeId) {
-        self.area_lights[light.idx()].transform_node = transform;
     }
 
     pub fn set_light_sampling_path(&mut self, light: LightId, path: u32) {
@@ -170,7 +165,6 @@ pub struct ImageLight {
 #[repr(C)]
 pub struct AreaLight {
     pub spectrum: SpectrumId,
-    pub transform_node: NodeId,
     pub shape: ShapeId,
     pub alpha: FloatTextureId,
     pub two_sided: u32,

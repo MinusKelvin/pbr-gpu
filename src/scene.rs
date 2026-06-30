@@ -4,6 +4,7 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::num::NonZero;
+use std::ops::Range;
 use std::path::Path;
 
 use bytemuck::NoUninit;
@@ -17,6 +18,7 @@ use image::Rgba32FImage;
 use image::RgbaImage;
 use wgpu::util::DeviceExt;
 
+use crate::Transform;
 use crate::spectrum::SpectrumData;
 use crate::storage_buffer_entry;
 
@@ -32,7 +34,6 @@ mod texture;
 pub use self::light::*;
 pub use self::light_sampler::*;
 pub use self::material::*;
-pub use self::node::*;
 pub use self::other::*;
 pub use self::shapes::*;
 pub use self::spectra::*;
@@ -42,14 +43,15 @@ type Luma32FImage = ImageBuffer<Luma<f32>, Vec<f32>>;
 
 #[derive(Default)]
 pub struct Scene {
-    pub spheres: Vec<Sphere>,
+    // pub spheres: Vec<Sphere>,
     pub triangles: Vec<Triangle>,
 
     pub triangle_vertices: Vec<TriVertex>,
 
-    pub bvh_nodes: Vec<BvhNode>,
-    pub transform_nodes: Vec<TransformNode>,
-    pub primitive_nodes: Vec<PrimitiveNode>,
+    pub triangle_properties: Vec<TriangleProperties>,
+
+    pub objects: Vec<Vec<Range<usize>>>,
+    pub instances: Vec<(usize, Transform)>,
 
     pub images: Vec<ImageData>,
 
@@ -82,7 +84,6 @@ pub struct Scene {
     pub power_light_samplers: Vec<PowerLightSampler>,
     pub power_light_sampler_data: Vec<PlsAliasBucket>,
 
-    pub root: Option<NodeId>,
     pub root_ls: Option<LightSamplerId>,
 
     pub named_spectra: HashMap<&'static str, SpectrumId>,
@@ -121,13 +122,10 @@ impl Scene {
     #[rustfmt::skip]
     pub fn print_stats(&self) {
         println!("Shapes");
-        println!("  Spheres           {}", human_size_of(&self.spheres));
+        // println!("  Spheres           {}", human_size_of(&self.spheres));
         println!("  Triangles         {}", human_size_of(&self.triangles));
         println!("  Tri verts         {}", human_size_of(&self.triangle_vertices));
-        println!("Scene geometry");
-        println!("  Primitives        {}", human_size_of(&self.primitive_nodes));
-        println!("  Transforms        {}", human_size_of(&self.transform_nodes));
-        println!("  BVH               {}", human_size_of(&self.bvh_nodes));
+        println!("  Tri properties    {}", human_size_of(&self.triangle_properties));
         println!("Texture Metadata");
         println!("  Spectrum          {}", self.spectrum_code.len());
         println!("  Float             {}", self.float_code.len());
@@ -170,9 +168,10 @@ impl Scene {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("scene"),
             entries: &[
-                storage_buffer_entry(0),
+                // storage_buffer_entry(0),
                 storage_buffer_entry(1),
                 storage_buffer_entry(2),
+                storage_buffer_entry(3),
                 storage_buffer_entry(32),
                 storage_buffer_entry(33),
                 storage_buffer_entry(34),
@@ -223,14 +222,11 @@ impl Scene {
         queue: &wgpu::Queue,
         layout: &wgpu::BindGroupLayout,
     ) -> wgpu::BindGroup {
-        let spheres = make_buffer(device, &self.spheres);
+        // let spheres = make_buffer(device, &self.spheres);
         let triangles = make_buffer(device, &self.triangles);
 
         let triangle_vertices = make_buffer(device, &self.triangle_vertices);
-
-        let bvh = make_buffer(device, &self.bvh_nodes);
-        let transform = make_buffer(device, &self.transform_nodes);
-        let primitive = make_buffer(device, &self.primitive_nodes);
+        let triangle_properties = make_buffer(device, &self.triangle_properties);
 
         let diffuse_mat = make_buffer(device, &self.diffuse_mat);
         let diffuse_transmit_mat = make_buffer(device, &self.diffuse_transmit_mat);
@@ -261,7 +257,6 @@ impl Scene {
         let power_light_samplers = make_buffer(device, &self.power_light_samplers);
         let power_light_sampler_data = make_buffer(device, &self.power_light_sampler_data);
 
-        let root = make_buffer(device, &[self.root.unwrap()]);
         let root_ls = make_buffer(device, &[self.root_ls.unwrap()]);
 
         let empty = [ImageData::Srgb(RgbaImage::new(1, 1))];
@@ -269,6 +264,24 @@ impl Scene {
             true => empty.iter(),
             false => self.images.iter(),
         };
+
+        let mut accel_build = node::AccelerationStructureBuild::default();
+        let obj_ids = self
+            .objects
+            .iter()
+            .map(|groups| accel_build.create_blas(groups, self))
+            .collect::<Vec<_>>();
+        let tlas = accel_build.create_tlas(
+            self.instances
+                .iter()
+                .map(|&(obj, tform)| (tform, obj_ids[obj])),
+            self,
+        );
+
+        let root = make_buffer(device, &[tlas]);
+        let bvh = make_buffer(device, &accel_build.bvh_nodes);
+        let transform = make_buffer(device, &accel_build.transform_nodes);
+        let triangle_nodes = make_buffer(device, &accel_build.triangle_nodes);
 
         let views: Vec<_> = images
             .map(|img| {
@@ -328,13 +341,14 @@ impl Scene {
             label: Some("scene"),
             layout,
             entries: &[
-                make_entry(0, &spheres),
+                // make_entry(0, &spheres),
                 make_entry(1, &triangles),
                 make_entry(2, &triangle_vertices),
+                make_entry(3, &triangle_properties),
                 make_entry(32, &root),
                 make_entry(33, &bvh),
                 make_entry(34, &transform),
-                make_entry(35, &primitive),
+                make_entry(35, &triangle_nodes),
                 wgpu::BindGroupEntry {
                     binding: 68,
                     resource: wgpu::BindingResource::TextureViewArray(&views_refs),

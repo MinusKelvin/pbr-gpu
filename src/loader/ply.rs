@@ -1,9 +1,10 @@
 use std::io::BufRead;
+use std::ops::Range;
 
 use bytemuck::Zeroable;
 use glam::{DMat3, DMat4};
 
-use crate::scene::{Scene, ShapeId, TriVertex};
+use crate::scene::{Scene, TriVertex};
 
 enum Format {
     BinaryLe,
@@ -42,11 +43,7 @@ enum Property {
     Unknown(Type),
 }
 
-pub fn load_plymesh<R: BufRead>(
-    scene: &mut Scene,
-    data: &mut R,
-    transform: DMat4,
-) -> impl Iterator<Item = ShapeId> + use<R> {
+pub fn load_plymesh<R: BufRead>(scene: &mut Scene, data: &mut R, transform: DMat4) -> Range<usize> {
     let mut format = None;
     let mut elements = vec![];
 
