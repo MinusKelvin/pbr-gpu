@@ -10,5 +10,5 @@ fn main() {
     atomicStore(&Q_BOUNCE.count, 0);
 
     let count = atomicLoad(&Q_TRACE_RAYS.count);
-    INDIRECT_SIZE[0] = vec3u((count + 31) / 32, 1, 1);
+    INDIRECT_SIZE[0] = vec3u((count + 255) / 256, 1, 1);
 }

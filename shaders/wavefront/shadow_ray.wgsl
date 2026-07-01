@@ -9,7 +9,7 @@
 #import /light_sampler.wgsl
 
 @compute
-@workgroup_size(32)
+@workgroup_size(256)
 fn main(
     @builtin(global_invocation_id) id: vec3u
 ) {

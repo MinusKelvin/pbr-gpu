@@ -7,5 +7,5 @@ var<storage, read_write> INDIRECT_SIZE: array<vec3u, 4>;
 @workgroup_size(1)
 fn main() {
     let num_shadow = atomicLoad(&Q_SHADOW.count);
-    INDIRECT_SIZE[3] = vec3u((num_shadow + 31) / 32, 1, 1);
+    INDIRECT_SIZE[3] = vec3u((num_shadow + 255) / 256, 1, 1);
 }
